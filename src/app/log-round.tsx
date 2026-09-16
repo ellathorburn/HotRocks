@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
+import { ulid } from 'ulid';
 import { useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -15,49 +16,70 @@ import {
   Sheet,
   TemperatureChips,
 } from '@/components/ds';
-import type { RoundSegment } from '@/components/ds';
 import { NavBar } from '@/components/nav-bar';
-import { ScreenGutter } from '@/constants/theme';
+import { Rubik, ScreenGutter, Type } from '@/constants/theme';
+import type { Round, RoundPartKind } from '@/features/sessions/domain/session';
 import { useTheme } from '@/hooks/use-theme';
 
 const CARRIED_HEAT = 90;
 const CARRIED_COLD = 11;
 
 /**
- * Log a round: heat or cold, duration, temperature, optional details. Saving
- * offers another round or hands off to the session summary. No local-first
- * store exists yet (docs/backend-roadmap.md), so the collected rounds travel
- * to `/session/summary` as a route param.
+ * A heat entry can hand directly to a cold entry in the same round. A cold
+ * entry finishes that round, so continuing starts the next one with heat.
+ * The local-first repository will replace the route-param draft transport.
  */
 export default function LogRoundScreen() {
   const theme = useTheme();
-  const [rounds, setRounds] = useState<RoundSegment[]>([]);
-  const roundNumber = rounds.length + 1;
+  const [rounds, setRounds] = useState<Round[]>([]);
+  const [continueLastRound, setContinueLastRound] = useState(false);
+  const roundNumber = continueLastRound ? rounds.length : rounds.length + 1;
 
-  const [type, setType] = useState<'heat' | 'cold'>(roundNumber > 1 ? 'cold' : 'heat');
-  const [mins, setMins] = useState(roundNumber > 1 ? 2 : 15);
-  const [temp, setTemp] = useState(roundNumber > 1 ? CARRIED_COLD : CARRIED_HEAT);
+  const [type, setType] = useState<RoundPartKind>('heat');
+  const [mins, setMins] = useState(15);
+  const [temp, setTemp] = useState(CARRIED_HEAT);
+  const [lastTemps, setLastTemps] = useState<Record<RoundPartKind, number>>({ heat: CARRIED_HEAT, cold: CARRIED_COLD });
   const [expanded, setExpanded] = useState(false);
   const [rating, setRating] = useState(4);
   const [venue, setVenue] = useState('Löyly Kallio');
   const [note, setNote] = useState('');
   const [addAnotherOpen, setAddAnotherOpen] = useState(false);
 
-  const selectType = (next: 'heat' | 'cold') => {
+  const selectType = (next: RoundPartKind) => {
     setType(next);
-    setTemp(next === 'cold' ? CARRIED_COLD : CARRIED_HEAT);
+    setTemp(lastTemps[next]);
     setMins(next === 'cold' ? 2 : 15);
   };
 
-  const finish = (allRounds: RoundSegment[]) => {
+  const finish = (allRounds: Round[]) => {
     router.replace({ pathname: '/session/summary', params: { rounds: JSON.stringify(allRounds), venue } });
   };
 
   const saveRound = () => {
-    const next = [...rounds, { type, minutes: mins, temp }];
+    const part = {
+      id: ulid(),
+      kind: type,
+      durationSeconds: Math.round(mins * 60),
+      temperatureCTenths: Math.round(temp * 10),
+    };
+    const next = continueLastRound
+      ? rounds.map((round, index) => index === rounds.length - 1 ? { ...round, parts: [...round.parts, part] } : round)
+      : [...rounds, { id: ulid(), parts: [part] }];
     setRounds(next);
+    setLastTemps((current) => ({ ...current, [type]: temp }));
+    setContinueLastRound(false);
     setAddAnotherOpen(true);
   };
+
+  const addNext = () => {
+    const continueCurrent = type === 'heat';
+    setContinueLastRound(continueCurrent);
+    selectType(type === 'heat' ? 'cold' : 'heat');
+    setAddAnotherOpen(false);
+  };
+
+  const activeSeconds = rounds.flatMap((round) => round.parts).reduce((total, part) => total + part.durationSeconds, 0);
+  const totalLabel = `${Math.floor(activeSeconds / 60)}m logged · ${rounds.length} ${rounds.length === 1 ? 'round' : 'rounds'}`;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
@@ -69,7 +91,7 @@ export default function LogRoundScreen() {
       <ScrollView contentContainerStyle={{ paddingHorizontal: ScreenGutter, paddingBottom: 96 }}>
         <SegmentedControl
           value={type}
-          onChange={(v) => selectType(v as 'heat' | 'cold')}
+          onChange={(v) => selectType(v as RoundPartKind)}
           options={[
             { value: 'heat', label: 'Sauna', icon: 'flame', tone: 'hot' },
             { value: 'cold', label: 'Plunge', icon: 'snowflake', tone: 'cold' },
@@ -82,7 +104,7 @@ export default function LogRoundScreen() {
         </View>
 
         <View style={{ marginTop: 28 }}>
-          <Label style={{ marginBottom: 10 }}>Temperature{roundNumber > 1 ? ' · carried forward' : ''}</Label>
+          <Label style={{ marginBottom: 10 }}>Temperature{rounds.length > 0 ? ' · carried forward' : ''}</Label>
           <TemperatureChips type={type} value={temp} onChange={setTemp} />
         </View>
 
@@ -124,14 +146,17 @@ export default function LogRoundScreen() {
         title={`Round ${rounds.length} logged`}
         onDismiss={() => setAddAnotherOpen(false)}>
         <View style={{ gap: 20 }}>
+          <Text style={{ fontFamily: Rubik.medium, fontSize: Type.body, color: theme.textSecondary, textAlign: 'center' }}>
+            {totalLabel}
+          </Text>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <Button
               variant="secondary"
               size="lg"
               style={{ flex: 1 }}
-              iconLeft={<Icon name="snowflake" size={18} color={theme.cold} />}
-              onPress={() => setAddAnotherOpen(false)}>
-              Another round
+              iconLeft={<Icon name={type === 'heat' ? 'snowflake' : 'flame'} size={18} color={type === 'heat' ? theme.cold : theme.hot} />}
+              onPress={addNext}>
+              {type === 'heat' ? 'Add plunge' : 'Add round'}
             </Button>
             <Button variant="secondary" size="lg" style={{ flex: 1 }} onPress={() => finish(rounds)}>
               Finish

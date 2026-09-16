@@ -29,11 +29,17 @@ are never committed to the repository.
 
 ## 3. Local-first database
 
-- [ ] Add PowerSync with the OP-SQLite adapter.
-- [ ] Define the client schema with Drizzle.
+- [x] Add PowerSync 2.x with its built-in OP-SQLite adapter.
+- [x] Define the PowerSync client schema and indexes.
 - [ ] Add authenticated per-user Sync Streams.
-- [ ] Implement atomic session creation and editing commands.
+- [x] Implement atomic session creation.
+- [ ] Implement atomic session editing and soft deletion.
 - [ ] Prove save/edit/delete after process restart in airplane mode.
+
+The app now requires an Expo development build on iOS and Android. PowerSync's
+native SQLite extension cannot run inside Expo Go. Remote sync is deliberately
+not connected until `EXPO_PUBLIC_POWERSYNC_URL` points at a provisioned
+PowerSync instance and its per-user Sync Streams have been deployed.
 
 ## 4. Photos
 
@@ -55,7 +61,7 @@ are never committed to the repository.
 
 - [ ] RLS isolation tests with two users.
 - [ ] Database constraint and cascade tests.
-- [ ] Six-round and cold-only session fixtures.
-- [ ] Long venue-name fixture.
+- [x] Six-round and cold-only session fixtures.
+- [x] Long venue-name fixture.
 - [ ] Concurrent Strava refresh tests.
 - [ ] Offline photo and session recovery tests.

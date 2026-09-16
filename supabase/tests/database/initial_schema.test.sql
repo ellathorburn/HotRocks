@@ -1,6 +1,6 @@
 begin;
 
-select plan(21);
+select plan(24);
 
 select has_table('public', 'profiles', 'profiles table exists');
 select has_table('public', 'venues', 'venues table exists');
@@ -250,6 +250,110 @@ select is(
   ),
   6291456::bigint,
   'the session photo bucket has a six MiB limit'
+);
+
+insert into public.venues (id, user_id, name)
+values (
+  '01HOTROCKSLONGVENUE0000001',
+  '10000000-0000-0000-0000-000000000001',
+  'Allas Sea Pool Helsinki Waterfront and Harbour Sauna'
+);
+
+select is(
+  (select name from public.venues where id = '01HOTROCKSLONGVENUE0000001'),
+  'Allas Sea Pool Helsinki Waterfront and Harbour Sauna',
+  'a realistic long venue name is preserved'
+);
+
+insert into public.sessions (
+  id, user_id, venue_name_snapshot, started_at, timezone_name,
+  elapsed_seconds, heat_seconds, cold_seconds, round_count
+)
+values
+  (
+    '01HOTROCKSCOLDONLY0000001',
+    '10000000-0000-0000-0000-000000000001',
+    'Sea Point Pavilion',
+    '2026-09-13T08:05:00+02:00',
+    'Africa/Johannesburg',
+    580,
+    0,
+    580,
+    1
+  ),
+  (
+    '01HOTROCKSSIXROUNDS000001',
+    '10000000-0000-0000-0000-000000000001',
+    'Allas Sea Pool Helsinki Waterfront and Harbour Sauna',
+    '2026-09-12T07:15:00+02:00',
+    'Africa/Johannesburg',
+    4320,
+    3600,
+    720,
+    6
+  );
+
+insert into public.rounds (id, user_id, session_id, position)
+values (
+  '01HOTROCKSCOLDROUND0000001',
+  '10000000-0000-0000-0000-000000000001',
+  '01HOTROCKSCOLDONLY0000001',
+  0
+);
+
+insert into public.round_parts (
+  id, user_id, session_id, round_id, position, kind,
+  duration_seconds, temperature_c_tenths
+)
+values (
+  '01HOTROCKSCOLDPART00000001',
+  '10000000-0000-0000-0000-000000000001',
+  '01HOTROCKSCOLDONLY0000001',
+  '01HOTROCKSCOLDROUND0000001',
+  0,
+  'cold',
+  580,
+  150
+);
+
+select is(
+  (
+    select count(*)
+    from public.round_parts
+    where session_id = '01HOTROCKSCOLDONLY0000001' and kind = 'cold'
+  ),
+  1::bigint,
+  'a session can contain one cold-only round'
+);
+
+insert into public.rounds (id, user_id, session_id, position)
+select
+  '01HOTROCKSSIXROUND' || lpad(position::text, 7, '0'),
+  '10000000-0000-0000-0000-000000000001',
+  '01HOTROCKSSIXROUNDS000001',
+  position
+from generate_series(0, 5) as position;
+
+insert into public.round_parts (
+  id, user_id, session_id, round_id, position, kind,
+  duration_seconds, temperature_c_tenths
+)
+select
+  '01HOTROCKSSIXPART' || lpad((round_position * 2 + part_position)::text, 8, '0'),
+  '10000000-0000-0000-0000-000000000001',
+  '01HOTROCKSSIXROUNDS000001',
+  '01HOTROCKSSIXROUND' || lpad(round_position::text, 7, '0'),
+  part_position,
+  case when part_position = 0 then 'heat' else 'cold' end,
+  case when part_position = 0 then 600 else 120 end,
+  case when part_position = 0 then 920 else 110 end
+from generate_series(0, 5) as round_position
+cross join generate_series(0, 1) as part_position;
+
+select is(
+  (select count(*) from public.rounds where session_id = '01HOTROCKSSIXROUNDS000001'),
+  6::bigint,
+  'a six-round session preserves all six logical rounds'
 );
 
 select * from finish();

@@ -9,6 +9,8 @@ Status: accepted foundation, 15 September 2026.
 - Strava is an optional integration, not an account identity.
 - The mobile database is local-first. Final architecture uses PowerSync over
   SQLite with Supabase Postgres as the cloud source of truth.
+- PowerSync 2.x supplies the OP-SQLite integration directly; the obsolete
+  `@powersync/op-sqlite` adapter package must not be installed beside it.
 - TanStack Query may manage short-lived server commands, but it is not the
   authoritative store for sessions.
 - All user-owned database rows are protected by Supabase Row Level Security.
@@ -40,6 +42,18 @@ The selected temperature unit is a presentation preference.
 5. A finalized `strava_exports` row causes a server-side queue job. An Edge
    Function refreshes the athlete token and creates the manual Strava activity.
 6. Strava status synchronizes back quietly and never blocks saving a session.
+
+## Current implementation boundary
+
+`src/services/powersync/schema.ts` mirrors the synchronized public tables and
+adds a local-only session draft table. `saveSession` creates or recalls a venue
+and writes the session, its logical rounds, and their heat/cold data atomically.
+Home subscribes to those local tables, so a completed save is visible without
+a network round trip.
+
+Remote upload/download is the next boundary. It requires a PowerSync service
+URL plus authenticated Sync Streams. Until then the database is durable local
+storage and `connect()` is intentionally not called.
 
 ## Time semantics
 

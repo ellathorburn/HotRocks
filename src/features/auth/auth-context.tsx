@@ -6,7 +6,6 @@ import {
   type PropsWithChildren,
   useContext,
   useEffect,
-  useMemo,
   useState,
 } from 'react';
 import { Platform } from 'react-native';
@@ -16,12 +15,15 @@ import {
   getSupabaseClient,
   hasSupabaseEnvironment,
 } from '@/services/supabase/client';
+import type { Tables } from '@/services/supabase/database.types';
 
 type AuthState = {
   isConfigured: boolean;
   isLoading: boolean;
   session: Session | null;
   user: User | null;
+  profile: Tables<'profiles'> | null;
+  completeOnboarding: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -29,7 +31,9 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: PropsWithChildren) {
   const isConfigured = hasSupabaseEnvironment();
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(isConfigured);
+  const [isAuthLoading, setIsAuthLoading] = useState(isConfigured);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [profile, setProfile] = useState<Tables<'profiles'> | null>(null);
 
   useEffect(() => {
     if (!isConfigured) {
@@ -41,14 +45,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     void supabase.auth.getSession().then(({ data, error }) => {
       if (!mounted) return;
-      setSession(error ? null : data.session);
-      setIsLoading(false);
+      const nextSession = error ? null : data.session;
+      setSession(nextSession);
+      setProfile(null);
+      setIsProfileLoading(Boolean(nextSession));
+      setIsAuthLoading(false);
     });
 
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (mounted) {
         setSession(nextSession);
-        setIsLoading(false);
+        setProfile(null);
+        setIsProfileLoading(Boolean(nextSession));
+        setIsAuthLoading(false);
       }
     });
 
@@ -57,6 +66,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
       data.subscription.unsubscribe();
     };
   }, [isConfigured]);
+
+  useEffect(() => {
+    if (!isConfigured || !session?.user.id) {
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    let mounted = true;
+
+    void supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setProfile(data);
+        setIsProfileLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [isConfigured, session?.user.id]);
 
   useEffect(() => {
     if (!isConfigured || Platform.OS !== 'web') return;
@@ -68,20 +101,35 @@ export function AuthProvider({ children }: PropsWithChildren) {
         router.replace('/');
       } catch {
         setSession(null);
-        setIsLoading(false);
+        setIsAuthLoading(false);
       }
     });
   }, [isConfigured]);
 
-  const value = useMemo<AuthState>(
-    () => ({
-      isConfigured,
-      isLoading,
-      session,
-      user: session?.user ?? null,
-    }),
-    [isConfigured, isLoading, session],
-  );
+  const completeOnboarding = async () => {
+    if (!session?.user.id) {
+      throw new Error('You must be signed in to complete onboarding.');
+    }
+
+    const { data, error } = await getSupabaseClient()
+      .from('profiles')
+      .update({ onboarding_completed_at: new Date().toISOString() })
+      .eq('user_id', session.user.id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    setProfile(data);
+  };
+
+  const value: AuthState = {
+    isConfigured,
+    isLoading: isAuthLoading || isProfileLoading,
+    session,
+    user: session?.user ?? null,
+    profile,
+    completeOnboarding,
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

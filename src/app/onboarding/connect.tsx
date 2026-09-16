@@ -1,15 +1,31 @@
 import { router } from 'expo-router';
+import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button, Logo, StravaConnect } from '@/components/ds';
 import { Dots } from '@/components/dots';
 import { Rubik, ScreenGutter, Type } from '@/constants/theme';
+import { useAuth } from '@/features/auth/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function OnboardingConnectScreen() {
   const theme = useTheme();
-  const finish = () => router.replace('/');
+  const { completeOnboarding } = useAuth();
+  const [isFinishing, setIsFinishing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const finish = async () => {
+    setErrorMessage(null);
+    setIsFinishing(true);
+    try {
+      await completeOnboarding();
+      router.replace('/');
+    } catch {
+      setErrorMessage('Could not finish setup. Try again.');
+      setIsFinishing(false);
+    }
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
@@ -23,10 +39,15 @@ export default function OnboardingConnectScreen() {
           is read from your account.
         </Text>
         <View style={{ gap: 12, marginTop: 8 }}>
-          <StravaConnect onPress={finish} />
-          <Button variant="ghost" fullWidth onPress={finish}>
+          <StravaConnect onPress={() => void finish()} />
+          <Button variant="ghost" fullWidth loading={isFinishing} onPress={() => void finish()}>
             Skip, log without Strava
           </Button>
+          {errorMessage ? (
+            <Text style={{ fontFamily: Rubik.medium, fontSize: Type.small, color: theme.cedar, textAlign: 'center' }}>
+              {errorMessage}
+            </Text>
+          ) : null}
         </View>
         <Dots active={2} />
       </View>
