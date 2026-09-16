@@ -1,67 +1,59 @@
 # Backend roadmap
 
-## 1. Local Supabase foundation
+## 1. Supabase foundation
 
-- [x] Initialize Supabase CLI files.
-- [x] Add the first normalized schema.
-- [x] Add RLS policies and ownership indexes.
-- [x] Add the private photo bucket and object policies.
+- [x] Initialize Supabase CLI files and normalized schema.
+- [x] Add RLS policies, ownership indexes and private photo storage.
 - [x] Keep anonymous sign-in disabled.
-- [x] Run the migration and database tests in local Supabase.
-- [x] Generate TypeScript database types.
+- [x] Add aggregate revisions, idempotency receipts and change cursor log.
+- [x] Add the atomic `push_session_aggregate` RPC.
+- [x] Pass 32 local database tests and database lint.
+- [x] Link and deploy migrations to the hosted Supabase project.
 
 ## 2. Account boundary
 
-- [x] Add the SDK 57-compatible Supabase client.
-- [x] Persist the Supabase session securely.
-- [x] Add auth routing before onboarding.
-- [x] Implement native Apple sign-in on iOS.
-- [x] Implement Google PKCE sign-in on iOS and Android.
-- [x] Add email OTP fallback.
+- [x] Add the SDK 57-compatible Supabase client and secure native auth storage.
+- [x] Require authentication before onboarding.
+- [x] Add Apple, Google PKCE and email OTP sign-in.
 - [x] Add account deletion and sign-out flows.
+- [x] Deploy the JWT-protected account-deletion Edge Function.
+- [ ] Configure hosted provider credentials, URLs and production SMTP.
+- [ ] Purge device data after account deletion.
 
-The client implementations are complete. Hosted Apple and Google provider
-credentials, SMTP and deployment remain environment provisioning tasks; see
-`docs/authentication.md`.
+## 3. Expo Go local-first database
 
-Provider credentials are configured later in the hosted Supabase project and
-are never committed to the repository.
-
-## 3. Local-first database
-
-- [x] Add PowerSync 2.x with its built-in OP-SQLite adapter.
-- [x] Define the PowerSync client schema and indexes.
-- [ ] Add authenticated per-user Sync Streams.
-- [x] Implement atomic session creation.
-- [ ] Implement atomic session editing and soft deletion.
+- [x] Use Expo SQLite and Drizzle instead of PowerSync/native OP-SQLite.
+- [x] Add bundled Drizzle migrations and live queries.
+- [x] Write a session aggregate and outbox item atomically.
+- [x] Add idempotent upload, revisions, conflict stop and retry backoff.
+- [x] Trigger upload after save, at launch, on foreground and while active.
+- [x] Show unsynced sessions quietly as “On device”.
+- [ ] Add atomic session editing.
+- [x] Implement cursor-based server pull and tombstones.
 - [ ] Prove save/edit/delete after process restart in airplane mode.
-
-The app now requires an Expo development build on iOS and Android. PowerSync's
-native SQLite extension cannot run inside Expo Go. Remote sync is deliberately
-not connected until `EXPO_PUBLIC_POWERSYNC_URL` points at a provisioned
-PowerSync instance and its per-user Sync Streams have been deployed.
+- [ ] Add two-device conflict tests.
 
 ## 4. Photos
 
 - [ ] Copy picked photos from cache to application documents.
-- [ ] Normalize and compress photos below the six-megabyte bucket limit.
-- [ ] Add a durable local upload outbox.
-- [ ] Retry on foreground, reconnect and eligible background execution.
+- [ ] Normalize and compress photos below the bucket limit.
+- [ ] Add a durable local photo upload outbox.
+- [ ] Retry independently from session sync.
 
 ## 5. Strava
 
+- [ ] Validate the final implementation against current Strava API docs.
 - [ ] Implement OAuth state creation and code exchange Edge Functions.
 - [ ] Encrypt access and refresh tokens at rest.
 - [ ] Add the durable export queue and worker.
-- [ ] Add token-refresh locking and rotating refresh-token storage.
-- [ ] Add ambiguous-create reconciliation and webhook handling.
-- [ ] Add disconnect/revoke.
+- [ ] Add token-refresh locking and ambiguous-create reconciliation.
+- [ ] Add webhook handling and disconnect/revoke.
 
 ## 6. Verification gates
 
-- [ ] RLS isolation tests with two users.
-- [ ] Database constraint and cascade tests.
-- [x] Six-round and cold-only session fixtures.
-- [x] Long venue-name fixture.
-- [ ] Concurrent Strava refresh tests.
-- [ ] Offline photo and session recovery tests.
+- [x] RLS and ownership database tests.
+- [x] Constraint, cascade, idempotency and conflict tests.
+- [x] Six-round, cold-only and long venue-name fixtures.
+- [x] Android production bundle with Expo-compatible modules.
+- [ ] Offline process-restart and recovery tests on iOS and Android.
+- [ ] Hosted staging sync test with two physical devices.

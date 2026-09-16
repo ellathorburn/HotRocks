@@ -1,7 +1,10 @@
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { ulid } from 'ulid';
 
 import { calculateSessionTotals, sessionDraftSchema, type SessionDraft } from '../domain/session';
-import { powerSync, prepareLocalDatabase } from '@/services/powersync/system';
+import { database } from '@/services/database/client';
+import { roundParts, rounds, sessionPhotos, sessions, syncOutbox, venues } from '@/services/database/schema';
+import { requestSync } from '@/services/sync/sync-engine';
 
 export type SaveSessionInput = SessionDraft & {
   userId: string;
@@ -9,103 +12,201 @@ export type SaveSessionInput = SessionDraft & {
   entryMethod?: 'manual' | 'timer' | 'repeat';
 };
 
-/** Writes the session and every child row as one durable SQLite transaction. */
+/** Writes the complete session aggregate and its durable upload operation atomically. */
 export async function saveSession(input: SaveSessionInput): Promise<string> {
   const draft = sessionDraftSchema.parse(input);
   const totals = calculateSessionTotals(draft);
   const now = new Date().toISOString();
 
-  await prepareLocalDatabase();
-  await powerSync.writeTransaction(async (tx) => {
+  database.transaction((tx) => {
     let venueId: string | null = null;
 
     if (draft.venueName) {
-      const existing = await tx.getOptional<{ id: string }>(
-        'SELECT id FROM venues WHERE user_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL LIMIT 1',
-        [input.userId, draft.venueName],
-      );
+      const existing = tx
+        .select({ id: venues.id })
+        .from(venues)
+        .where(and(
+          eq(venues.userId, input.userId),
+          isNull(venues.deletedAt),
+          sql`lower(${venues.name}) = lower(${draft.venueName})`,
+        ))
+        .limit(1)
+        .get();
       venueId = existing?.id ?? ulid();
 
       if (existing) {
-        await tx.execute('UPDATE venues SET name = ?, last_used_at = ?, updated_at = ? WHERE id = ?', [draft.venueName, now, now, venueId]);
+        tx.update(venues)
+          .set({ name: draft.venueName, lastUsedAt: now, updatedAt: now })
+          .where(eq(venues.id, venueId))
+          .run();
       } else {
-        await tx.execute(
-          'INSERT INTO venues (id, user_id, name, last_used_at, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, NULL)',
-          [venueId, input.userId, draft.venueName, now, now, now],
-        );
+        tx.insert(venues).values({
+          id: venueId,
+          userId: input.userId,
+          name: draft.venueName,
+          lastUsedAt: now,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        }).run();
       }
     }
 
-    await tx.execute(
-      `INSERT INTO sessions (
-        id, user_id, venue_id, venue_name_snapshot, started_at, ended_at,
-        timezone_name, elapsed_seconds, heat_seconds, cold_seconds, round_count,
-        rating, note, entry_method, created_at, updated_at, deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-      [
-        draft.id,
-        input.userId,
-        venueId,
-        draft.venueName,
-        draft.startedAt,
-        new Date(new Date(draft.startedAt).getTime() + totals.elapsedSeconds * 1000).toISOString(),
-        input.timezoneName,
-        totals.elapsedSeconds,
-        totals.heatSeconds,
-        totals.coldSeconds,
-        totals.roundCount,
-        draft.rating,
-        draft.note,
-        input.entryMethod ?? 'manual',
-        now,
-        now,
-      ],
-    );
+    const endedAt = new Date(new Date(draft.startedAt).getTime() + totals.elapsedSeconds * 1000).toISOString();
+    tx.insert(sessions).values({
+      id: draft.id,
+      userId: input.userId,
+      venueId,
+      venueNameSnapshot: draft.venueName,
+      startedAt: draft.startedAt,
+      endedAt,
+      timezoneName: input.timezoneName,
+      elapsedSeconds: totals.elapsedSeconds,
+      heatSeconds: totals.heatSeconds,
+      coldSeconds: totals.coldSeconds,
+      roundCount: totals.roundCount,
+      rating: draft.rating,
+      note: draft.note,
+      entryMethod: input.entryMethod ?? 'manual',
+      revision: 0,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    }).run();
 
     for (const [roundPosition, round] of draft.rounds.entries()) {
-      await tx.execute(
-        'INSERT INTO rounds (id, user_id, session_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-        [round.id, input.userId, draft.id, roundPosition, now, now],
-      );
+      tx.insert(rounds).values({
+        id: round.id,
+        userId: input.userId,
+        sessionId: draft.id,
+        position: roundPosition,
+        createdAt: now,
+        updatedAt: now,
+      }).run();
 
       for (const [partPosition, part] of round.parts.entries()) {
-        await tx.execute(
-          `INSERT INTO round_parts (
-            id, user_id, session_id, round_id, position, kind, duration_seconds,
-            temperature_c_tenths, started_at, ended_at, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
-          [
-            part.id,
-            input.userId,
-            draft.id,
-            round.id,
-            partPosition,
-            part.kind,
-            part.durationSeconds,
-            part.temperatureCTenths,
-            now,
-            now,
-          ],
-        );
+        tx.insert(roundParts).values({
+          id: part.id,
+          userId: input.userId,
+          sessionId: draft.id,
+          roundId: round.id,
+          position: partPosition,
+          kind: part.kind,
+          durationSeconds: part.durationSeconds,
+          temperatureCTenths: part.temperatureCTenths,
+          startedAt: null,
+          endedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        }).run();
       }
     }
+
+    const payload = JSON.stringify({
+      schemaVersion: 1,
+      baseRevision: 0,
+      venue: venueId && draft.venueName ? { id: venueId, name: draft.venueName, lastUsedAt: now } : null,
+      session: {
+        id: draft.id,
+        venueId,
+        venueNameSnapshot: draft.venueName,
+        startedAt: draft.startedAt,
+        endedAt,
+        timezoneName: input.timezoneName,
+        elapsedSeconds: totals.elapsedSeconds,
+        heatSeconds: totals.heatSeconds,
+        coldSeconds: totals.coldSeconds,
+        roundCount: totals.roundCount,
+        rating: draft.rating,
+        note: draft.note,
+        entryMethod: input.entryMethod ?? 'manual',
+        createdAt: now,
+        updatedAt: now,
+      },
+      rounds: draft.rounds,
+    });
+
+    tx.insert(syncOutbox).values({
+      id: ulid(),
+      userId: input.userId,
+      aggregateType: 'session',
+      aggregateId: draft.id,
+      operation: 'upsert',
+      payloadJson: payload,
+      status: 'pending',
+      attemptCount: 0,
+      nextAttemptAt: null,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [syncOutbox.userId, syncOutbox.aggregateType, syncOutbox.aggregateId],
+      set: {
+        operation: 'upsert',
+        payloadJson: payload,
+        status: 'pending',
+        attemptCount: 0,
+        nextAttemptAt: null,
+        lastError: null,
+        updatedAt: now,
+      },
+    }).run();
   });
 
+  void requestSync(input.userId);
   return draft.id;
 }
 
-/** Hides a session immediately while preserving a tombstone for remote sync. */
+/** Hides a session immediately and queues a tombstone for the cloud. */
 export async function softDeleteSession(sessionId: string, userId: string): Promise<void> {
   const now = new Date().toISOString();
-  await prepareLocalDatabase();
-  await powerSync.writeTransaction(async (tx) => {
-    await tx.execute(
-      'UPDATE sessions SET deleted_at = ?, updated_at = ? WHERE id = ? AND user_id = ?',
-      [now, now, sessionId, userId],
-    );
-    await tx.execute(
-      'UPDATE session_photos SET deleted_at = ?, updated_at = ? WHERE session_id = ? AND user_id = ?',
-      [now, now, sessionId, userId],
-    );
+  const current = database
+    .select({ revision: sessions.revision })
+    .from(sessions)
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)))
+    .get();
+  const payload = JSON.stringify({
+    schemaVersion: 1,
+    baseRevision: current?.revision ?? 0,
+    sessionId,
+    deletedAt: now,
   });
+
+  database.transaction((tx) => {
+    tx.update(sessions)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)))
+      .run();
+    tx.update(sessionPhotos)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(sessionPhotos.sessionId, sessionId), eq(sessionPhotos.userId, userId)))
+      .run();
+    tx.insert(syncOutbox).values({
+      id: ulid(),
+      userId,
+      aggregateType: 'session',
+      aggregateId: sessionId,
+      operation: 'delete',
+      payloadJson: payload,
+      status: 'pending',
+      attemptCount: 0,
+      nextAttemptAt: null,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [syncOutbox.userId, syncOutbox.aggregateType, syncOutbox.aggregateId],
+      set: {
+        operation: 'delete',
+        payloadJson: payload,
+        status: 'pending',
+        attemptCount: 0,
+        nextAttemptAt: null,
+        lastError: null,
+        updatedAt: now,
+      },
+    }).run();
+  });
+
+  void requestSync(userId);
 }

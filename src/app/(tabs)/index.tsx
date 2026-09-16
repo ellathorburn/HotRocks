@@ -1,4 +1,5 @@
-import { useQuery } from '@powersync/react';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { FlatList, Text, View } from 'react-native';
@@ -8,24 +9,8 @@ import { Button, Card, IconButton, Label, Logo, SessionCard, StatsStrip, type Ro
 import { Rubik, ScreenGutter, Type } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 import { useTheme } from '@/hooks/use-theme';
-
-type LocalSession = {
-  id: string;
-  venue_name_snapshot: string | null;
-  elapsed_seconds: number;
-  round_count: number;
-  started_at: string;
-  rating: number | null;
-};
-
-type LocalPart = {
-  session_id: string;
-  kind: 'heat' | 'cold';
-  duration_seconds: number;
-  temperature_c_tenths: number | null;
-  round_position: number;
-  part_position: number;
-};
+import { database } from '@/services/database/client';
+import { roundParts, rounds, sessions as sessionTable, syncOutbox } from '@/services/database/schema';
 
 function formatDuration(seconds: number) {
   const hours = Math.floor(seconds / 3600);
@@ -48,53 +33,71 @@ export default function HomeScreen() {
   const theme = useTheme();
   const { user } = useAuth();
   const userId = user?.id ?? '';
-  const { data: sessions, isLoading } = useQuery<LocalSession>(
-    `SELECT id, venue_name_snapshot, elapsed_seconds, round_count, started_at, rating
-     FROM sessions
-     WHERE user_id = ? AND deleted_at IS NULL
-     ORDER BY started_at DESC, id DESC`,
+  const { data: sessionRows = [], updatedAt } = useLiveQuery(
+    database.select({
+      id: sessionTable.id,
+      venueNameSnapshot: sessionTable.venueNameSnapshot,
+      elapsedSeconds: sessionTable.elapsedSeconds,
+      roundCount: sessionTable.roundCount,
+      startedAt: sessionTable.startedAt,
+      rating: sessionTable.rating,
+    }).from(sessionTable)
+      .where(and(eq(sessionTable.userId, userId), isNull(sessionTable.deletedAt)))
+      .orderBy(desc(sessionTable.startedAt), desc(sessionTable.id)),
     [userId],
   );
-  const { data: parts } = useQuery<LocalPart>(
-    `SELECT p.session_id, p.kind, p.duration_seconds, p.temperature_c_tenths,
-            r.position AS round_position, p.position AS part_position
-     FROM round_parts p
-     JOIN rounds r ON r.id = p.round_id
-     WHERE p.user_id = ?
-     ORDER BY r.position, p.position`,
+  const { data: parts = [] } = useLiveQuery(
+    database.select({
+      sessionId: roundParts.sessionId,
+      kind: roundParts.kind,
+      durationSeconds: roundParts.durationSeconds,
+      temperatureCTenths: roundParts.temperatureCTenths,
+      roundPosition: rounds.position,
+      partPosition: roundParts.position,
+    }).from(roundParts)
+      .innerJoin(rounds, eq(rounds.id, roundParts.roundId))
+      .where(eq(roundParts.userId, userId))
+      .orderBy(asc(rounds.position), asc(roundParts.position)),
+    [userId],
+  );
+  const { data: pending = [] } = useLiveQuery(
+    database.select({ aggregateId: syncOutbox.aggregateId })
+      .from(syncOutbox)
+      .where(and(eq(syncOutbox.userId, userId), eq(syncOutbox.aggregateType, 'session'))),
     [userId],
   );
 
-  const cards = useMemo(() => sessions.map((session) => {
+  const cards = useMemo(() => sessionRows.map((session) => {
     const segments: RoundSegment[] = parts
-      .filter((part) => part.session_id === session.id)
+      .filter((part) => part.sessionId === session.id)
       .map((part) => ({
         type: part.kind,
-        minutes: part.duration_seconds / 60,
-        temp: part.temperature_c_tenths === null ? null : part.temperature_c_tenths / 10,
+        minutes: part.durationSeconds / 60,
+        temp: part.temperatureCTenths === null ? null : part.temperatureCTenths / 10,
       }));
     return {
       id: session.id,
-      venue: session.venue_name_snapshot ?? 'Venue not set',
-      totalTime: formatDuration(session.elapsed_seconds),
-      rounds: session.round_count,
-      date: new Intl.DateTimeFormat(undefined, { weekday: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(session.started_at)),
+      venue: session.venueNameSnapshot ?? 'Venue not set',
+      totalTime: formatDuration(session.elapsedSeconds),
+      rounds: session.roundCount,
+      date: new Intl.DateTimeFormat(undefined, { weekday: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(session.startedAt)),
       rating: session.rating,
       segments,
+      synced: !pending.some((item) => item.aggregateId === session.id),
     };
-  }), [parts, sessions]);
+  }), [parts, pending, sessionRows]);
 
   const week = useMemo(() => {
     const boundary = startOfWeek();
-    const current = sessions.filter((session) => new Date(session.started_at) >= boundary);
+    const current = sessionRows.filter((session) => new Date(session.startedAt) >= boundary);
     return {
       sessions: current.length,
-      rounds: current.reduce((total, session) => total + session.round_count, 0),
-      seconds: current.reduce((total, session) => total + session.elapsed_seconds, 0),
+      rounds: current.reduce((total, session) => total + session.roundCount, 0),
+      seconds: current.reduce((total, session) => total + session.elapsedSeconds, 0),
     };
-  }, [sessions]);
+  }, [sessionRows]);
 
-  if (!isLoading && cards.length === 0) return <EmptyHome />;
+  if (updatedAt && cards.length === 0) return <EmptyHome />;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>

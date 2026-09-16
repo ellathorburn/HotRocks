@@ -2,7 +2,7 @@
 --
 -- Public tables are synchronized to the app and protected with RLS. Strava
 -- credentials live in the private schema and are never exposed through the
--- Data API or PowerSync.
+-- public Data API.
 
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;

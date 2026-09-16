@@ -162,6 +162,33 @@ export async function verifyEmailOtp(
   }
 }
 
+export async function signInWithPassword(
+  email: string,
+  password: string,
+): Promise<void> {
+  const { error } = await getSupabaseClient().auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
+  if (error) throw error;
+}
+
+export async function createAccountWithPassword(
+  email: string,
+  password: string,
+): Promise<void> {
+  const { data, error } = await getSupabaseClient().auth.signUp({
+    email: email.trim().toLowerCase(),
+    password,
+  });
+  if (error) throw error;
+  if (!data.session) {
+    throw new Error(
+      'Account created, but email confirmation is enabled. Disable Confirm email in Supabase for development, then sign in.',
+    );
+  }
+}
+
 export async function signOut(): Promise<void> {
   const { error } = await getSupabaseClient().auth.signOut();
   if (error) {

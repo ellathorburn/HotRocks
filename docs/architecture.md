@@ -1,79 +1,102 @@
 # HotRocks architecture
 
-Status: accepted foundation, 15 September 2026.
+Status: implemented foundation, 16 September 2026.
 
 ## Decisions
 
-- Every user must create a permanent HotRocks account before onboarding completes.
-- Apple and Google are the primary sign-in methods. Email OTP is the fallback.
+- Every user creates a permanent HotRocks account. Apple and Google are the
+  primary sign-in methods; email OTP is the fallback.
 - Strava is an optional integration, not an account identity.
-- The mobile database is local-first. Final architecture uses PowerSync over
-  SQLite with Supabase Postgres as the cloud source of truth.
-- PowerSync 2.x supplies the OP-SQLite integration directly; the obsolete
-  `@powersync/op-sqlite` adapter package must not be installed beside it.
-- TanStack Query may manage short-lived server commands, but it is not the
-  authoritative store for sessions.
-- All user-owned database rows are protected by Supabase Row Level Security.
-- Strava credentials are encrypted server-side and never synchronized to a
-  device.
-- Supabase OAuth uses authorization code flow with PKCE. Native session data is
-  stored in Expo SecureStore; the app never contains provider or service-role
-  secrets.
+- Expo SQLite is the on-device source of truth. Drizzle owns the typed schema,
+  migrations and reactive reads. This works in Expo Go on SDK 57.
+- Supabase Postgres is the durable cloud source of truth. Row Level Security
+  isolates every user-owned row.
+- A durable local outbox synchronizes aggregate commands to Supabase. Saving a
+  session never waits for the network.
+- TanStack Query can be added for ephemeral HTTP state, but must not become the
+  authoritative store for sessions or queued work.
+- Strava credentials stay encrypted server-side and never enter SQLite or the
+  Expo bundle.
 
-## Domain language
+## Domain and storage model
 
 A session is one visit and maps to one Strava activity. A round is one pass
-through heat, cold, or both. `round_parts` is the internal table for the heat
-or cold half of a round; this implementation name never appears in the user
-interface.
+through heat, cold, or both. `round_parts` stores each heat/cold half internally;
+the word “segment” is never shown in the interface.
 
-Canonical values are stored as integer seconds and tenths of a degree Celsius.
-The selected temperature unit is a presentation preference.
+Canonical durations are integer seconds. Temperatures are integer tenths of a
+degree Celsius. Unit choice is presentation-only. `heat_seconds` and
+`cold_seconds` are active totals; `elapsed_seconds` is wall-clock visit time and
+must be at least their sum.
 
-## Data flow
+The synchronized aggregate is:
 
-1. Screens call domain commands rather than Supabase directly.
-2. Domain commands write sessions and their child rows to local SQLite in one
-   transaction.
-3. PowerSync uploads those mutations and downloads changes belonging to the
-   authenticated user.
-4. Photos are copied into durable local app storage and uploaded separately to
-   the private `session-photos` bucket.
-5. A finalized `strava_exports` row causes a server-side queue job. An Edge
-   Function refreshes the athlete token and creates the manual Strava activity.
-6. Strava status synchronizes back quietly and never blocks saving a session.
+```text
+session
+├── optional venue snapshot/reference
+└── rounds (ordered)
+    └── round_parts (ordered heat/cold values)
+```
 
-## Current implementation boundary
+Photos and Strava exports have independent workflows because they have different
+failure modes and retry requirements.
 
-`src/services/powersync/schema.ts` mirrors the synchronized public tables and
-adds a local-only session draft table. `saveSession` creates or recalls a venue
-and writes the session, its logical rounds, and their heat/cold data atomically.
-Home subscribes to those local tables, so a completed save is visible without
-a network round trip.
+## Write path
 
-Remote upload/download is the next boundary. It requires a PowerSync service
-URL plus authenticated Sync Streams. Until then the database is durable local
-storage and `connect()` is intentionally not called.
+1. A domain command validates the draft and calculates totals.
+2. One SQLite transaction writes the venue, session, rounds, round parts and a
+   coalesced `sync_outbox` operation.
+3. Drizzle live queries update the interface immediately.
+4. The sync worker runs after the save, on app launch/foreground, and every 30
+   seconds while active.
+5. `push_session_aggregate` applies the aggregate in one Postgres transaction.
+   The authenticated JWT and RLS determine ownership; the client never sends a
+   trusted owner identity.
+6. A successful response advances the local revision and removes the outbox
+   item atomically.
 
-## Time semantics
+The RPC uses an idempotency key, optimistic base revision and stored response.
+An interrupted request can therefore be repeated without creating duplicate
+rounds. Transient failures use capped exponential backoff. Revision conflicts
+become `action_required` rather than silently overwriting another device.
 
-`heat_seconds` and `cold_seconds` are active training totals. `elapsed_seconds`
-is the whole visit and must be at least their sum. Timer sessions calculate true
-wall-clock elapsed time. Until the summary interaction is finalized, manual
-sessions default elapsed time to the sum of their entered round parts.
+## Read path
 
-## Strava privacy
+Local SQLite drives every session screen. The server records a monotonic
+`sync_changes.sequence` for each session mutation. A cursor pull downloads
+changed aggregates and tombstones since `sync_state.pull_cursor`, then applies
+each page in a local transaction. The cursor advances only with that commit.
 
-Strava's activity create and update APIs do not accept a visibility field.
-"Keep private" therefore means keep the session in HotRocks without creating a
-Strava activity. Posted activities inherit the athlete's Strava privacy default.
+If a remote change targets an aggregate with a local outbox operation, pulling
+stops before that change. The next upload either succeeds from the known base
+revision or becomes `action_required`; remote data is never silently placed over
+an offline edit.
+
+## Account isolation
+
+Every local query includes `user_id`, so accounts on the same device never see
+one another’s rows. Remote access is independently protected by RLS. Local data
+is not SQLCipher-encrypted because SQLCipher requires a development build and is
+not available in Expo Go. Device storage encryption and OS sandboxing are the
+current at-rest boundary.
+
+Before production, sign-out behavior must be finalized: retain account-scoped
+rows for fast offline return, or purge that account’s rows on sign-out. Account
+deletion must purge them.
+
+## Strava boundary
+
+The mobile app will invoke Supabase Edge Functions for OAuth and export intent.
+A server worker owns token refresh and Strava writes. Strava activity creation
+does not accept a per-activity visibility field, so “Keep private” means no
+Strava post; posted activities inherit the athlete’s Strava privacy default.
 
 ## Source documentation
 
 - [Expo SDK 57](https://docs.expo.dev/versions/v57.0.0/)
 - [Expo SDK 57 SQLite](https://docs.expo.dev/versions/v57.0.0/sdk/sqlite/)
+- [Drizzle with Expo SQLite](https://orm.drizzle.team/docs/connect-expo-sqlite)
 - [Supabase Expo quickstart](https://supabase.com/docs/guides/getting-started/quickstarts/expo-react-native)
-- [Supabase Auth with Expo](https://supabase.com/docs/guides/auth/quickstarts/with-expo-react-native-social-auth)
-- [PowerSync React Native and Expo](https://docs.powersync.com/client-sdks/reference/react-native-and-expo)
+- [Supabase API keys](https://supabase.com/docs/guides/api/api-keys)
 - [Strava authentication](https://developers.strava.com/docs/authentication/)
 - [Strava API reference](https://developers.strava.com/docs/reference/)

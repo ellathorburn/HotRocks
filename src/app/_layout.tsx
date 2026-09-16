@@ -6,13 +6,13 @@ import {
   useFonts,
 } from '@expo-google-fonts/rubik';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
-import { PowerSyncContext } from '@powersync/react';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AuthProvider, useAuth } from '@/features/auth/auth-context';
-import { powerSync } from '@/services/powersync/system';
+import { DatabaseProvider } from '@/services/database/database-provider';
+import { SyncProvider } from '@/services/sync/sync-provider';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -74,11 +74,13 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <PowerSyncContext.Provider value={powerSync}>
+      <DatabaseProvider>
         <AuthProvider>
-          <RootNavigator />
+          <SyncProvider>
+            <RootNavigator />
+          </SyncProvider>
         </AuthProvider>
-      </PowerSyncContext.Provider>
+      </DatabaseProvider>
     </ThemeProvider>
   );
 }

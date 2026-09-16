@@ -1,4 +1,5 @@
-import { useQuery } from '@powersync/react';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { FlatList, View } from 'react-native';
@@ -9,8 +10,8 @@ import { NavBar } from '@/components/nav-bar';
 import { ScreenGutter } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 import { useTheme } from '@/hooks/use-theme';
-
-type VenueRow = { id: string; name: string; last_used_at: string | null };
+import { database } from '@/services/database/client';
+import { venues as venueTable } from '@/services/database/schema';
 
 export default function VenuePickerScreen() {
   const theme = useTheme();
@@ -23,11 +24,13 @@ export default function VenuePickerScreen() {
     entryMethod?: 'manual' | 'timer' | 'repeat';
   }>();
   const [query, setQuery] = useState('');
-  const { data: savedVenues } = useQuery<VenueRow>(
-    `SELECT id, name, last_used_at FROM venues
-     WHERE user_id = ? AND deleted_at IS NULL
-     ORDER BY last_used_at DESC, name ASC`,
-    [user?.id ?? ''],
+  const userId = user?.id ?? '';
+  const { data: savedVenues = [] } = useLiveQuery(
+    database.select({ id: venueTable.id, name: venueTable.name, lastUsedAt: venueTable.lastUsedAt })
+      .from(venueTable)
+      .where(and(eq(venueTable.userId, userId), isNull(venueTable.deletedAt)))
+      .orderBy(desc(venueTable.lastUsedAt), asc(venueTable.name)),
+    [userId],
   );
   const venues = savedVenues.filter((venue) => venue.name.toLowerCase().includes(query.trim().toLowerCase()));
   const exactMatch = savedVenues.some((venue) => venue.name.toLowerCase() === query.trim().toLowerCase());
@@ -64,8 +67,8 @@ export default function VenuePickerScreen() {
             renderItem={({ item }) => (
               <ListRow
                 title={item.name}
-                meta={item.last_used_at
-                  ? `Last used ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(item.last_used_at))}`
+                meta={item.lastUsedAt
+                  ? `Last used ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(item.lastUsedAt))}`
                   : 'Saved venue'}
                 selected={item.name === params.venue}
                 leading={<Icon name="map-pin" size={20} color={theme.textSecondary} />}

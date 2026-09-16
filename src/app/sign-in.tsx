@@ -6,17 +6,16 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/features/auth/auth-context';
 import {
-  requestEmailOtp,
+  createAccountWithPassword,
   signInWithApple,
   signInWithGoogle,
-  verifyEmailOtp,
+  signInWithPassword,
 } from '@/features/auth/auth-service';
 
 export default function SignInScreen() {
   const { isConfigured } = useAuth();
-  const [step, setStep] = useState<'email' | 'otp'>('email');
   const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
+  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -61,52 +60,38 @@ export default function SignInScreen() {
           )}
           <Button title="Continue with Google" disabled={isSubmitting} onPress={() => void submit(signInWithGoogle)} />
 
-          {step === 'email' ? (
-            <>
-              <ThemedText>Email</ThemedText>
-              <TextInput
-                accessibilityLabel="Email address"
-                autoCapitalize="none"
-                autoComplete="email"
-                editable={!isSubmitting}
-                inputMode="email"
-                onChangeText={setEmail}
-                style={styles.input}
-                value={email}
-              />
-              <Button
-                title="Email me a code"
-                disabled={isSubmitting || email.trim().length === 0}
-                onPress={() => void submit(async () => {
-                  await requestEmailOtp(email);
-                  setStep('otp');
-                })}
-              />
-            </>
-          ) : (
-            <>
-              <ThemedText>Code sent to {email.trim().toLowerCase()}</ThemedText>
-              <TextInput
-                accessibilityLabel="Six-digit sign-in code"
-                autoComplete="one-time-code"
-                editable={!isSubmitting}
-                inputMode="numeric"
-                maxLength={6}
-                onChangeText={setOtp}
-                style={styles.input}
-                value={otp}
-              />
-              <Button
-                title="Verify code"
-                disabled={isSubmitting || otp.trim().length !== 6}
-                onPress={() => void submit(() => verifyEmailOtp(email, otp))}
-              />
-              <Button title="Use a different email" disabled={isSubmitting} onPress={() => {
-                setOtp('');
-                setStep('email');
-              }} />
-            </>
-          )}
+          <ThemedText>Email</ThemedText>
+          <TextInput
+            accessibilityLabel="Email address"
+            autoCapitalize="none"
+            autoComplete="email"
+            editable={!isSubmitting}
+            inputMode="email"
+            onChangeText={setEmail}
+            style={styles.input}
+            value={email}
+          />
+          <ThemedText>Password</ThemedText>
+          <TextInput
+            accessibilityLabel="Password"
+            autoCapitalize="none"
+            autoComplete="password"
+            editable={!isSubmitting}
+            onChangeText={setPassword}
+            secureTextEntry
+            style={styles.input}
+            value={password}
+          />
+          <Button
+            title="Sign in"
+            disabled={isSubmitting || email.trim().length === 0 || password.length < 8}
+            onPress={() => void submit(() => signInWithPassword(email, password))}
+          />
+          <Button
+            title="Create account"
+            disabled={isSubmitting || email.trim().length === 0 || password.length < 8}
+            onPress={() => void submit(() => createAccountWithPassword(email, password))}
+          />
 
           {isSubmitting && <ActivityIndicator />}
           {errorMessage && <ThemedText>{errorMessage}</ThemedText>}

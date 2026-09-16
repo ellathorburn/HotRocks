@@ -2,10 +2,8 @@ import type { RoundSegment } from '@/components/ds';
 import type { HeatmapDay } from '@/components/ds/heatmap';
 
 /**
- * Placeholder session fixtures, ported from the design system's screen
- * gallery. The real local-first data layer (PowerSync + SQLite) is not
- * built yet — see docs/backend-roadmap.md — so screens read from here
- * until a live store exists. Shapes intentionally echo `SessionCardData`.
+ * Design fixtures retained for profile statistics and preview-only screens.
+ * Session list and detail screens use the live Expo SQLite store.
  */
 export type SampleSession = {
   id: string;

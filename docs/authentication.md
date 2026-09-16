@@ -11,8 +11,10 @@ The UI can call the functions exported by
 - `signInWithApple()` uses native Apple Authentication on iOS and browser OAuth
   elsewhere.
 - `signInWithGoogle()` uses Supabase PKCE OAuth in the system browser.
-- `requestEmailOtp(email)` and `verifyEmailOtp(email, code)` implement the
-  six-digit email fallback.
+- `signInWithPassword(email, password)` and `createAccountWithPassword(...)`
+  provide the development fallback that needs no SMTP.
+- `requestEmailOtp(email)` and `verifyEmailOtp(email, code)` remain ready for
+  the six-digit production fallback once custom SMTP is configured.
 - `signOut()` ends the Supabase session.
 - `deleteAccount()` invokes the authenticated server function, removes stored
   photos, deletes the Auth user and clears the local session.
@@ -39,12 +41,22 @@ local Supabase stack.
 
 When the hosted project exists:
 
+An organization alone does not have a project URL. First create a project
+inside the organization. Open that project and use the **Connect** button to
+copy its Project URL and publishable key. The URL has the form
+`https://<project-ref>.supabase.co`.
+
+The HotRocks repository is currently linked to the hosted `HotRocks DB`
+project. All three database migrations are deployed and match local history.
+
 1. Run `npx supabase login` locally. Never paste the access token into chat or
    commit it.
 2. Link with `npx supabase link --project-ref <project-ref>` and push the
    reviewed migrations.
 3. Copy the hosted project URL and publishable key into the ignored `.env`
-   file. Never put a secret or service-role key in an `EXPO_PUBLIC_` variable.
+   file as `EXPO_PUBLIC_SUPABASE_URL` and
+   `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Never put a secret or service-role
+   key in an `EXPO_PUBLIC_` variable.
 4. Add `hotrocks://auth/callback` to Authentication > URL Configuration.
 5. Configure the Google provider with the Supabase callback URL in Google
    Cloud, and then add its client ID and secret in Supabase.
@@ -55,8 +67,18 @@ When the hosted project exists:
    committed OTP wording and include `{{ .Token }}`.
 8. Configure production SMTP before launch; the built-in sender is for limited
    testing only.
-9. Deploy `delete-account` with user authentication enabled.
+9. Deploy `delete-account` with user authentication enabled. This is deployed
+   and active in the hosted HotRocks project.
 
 Google and Apple cannot complete end-to-end locally until their provider
 credentials and final app identifiers exist. Email OTP can be exercised
 entirely against the Docker stack.
+
+## Development without SMTP
+
+Hosted development can use email and password without sending any email. In
+Supabase Dashboard, open Authentication > Sign In / Providers > Email and turn
+off **Confirm email**. The sign-in harness then creates a normal permanent
+Supabase user and receives a session immediately. Re-enable confirmation before
+production email/password sign-up, or return the interface to OTP after custom
+SMTP is configured.
