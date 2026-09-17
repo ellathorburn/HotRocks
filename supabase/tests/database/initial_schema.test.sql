@@ -1,6 +1,6 @@
 begin;
 
-select plan(24);
+select plan(26);
 
 select has_table('public', 'profiles', 'profiles table exists');
 select has_table('public', 'venues', 'venues table exists');
@@ -103,6 +103,11 @@ values
     1
   );
 
+-- Simulate an interrupted auth trigger so the client can repair only its own
+-- profile after authentication.
+delete from public.profiles
+where user_id = '10000000-0000-0000-0000-000000000001';
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -119,6 +124,25 @@ select is(
   (select venue_name_snapshot from public.sessions limit 1),
   'Sea Point Pavilion',
   'RLS returns the expected owner row'
+);
+
+insert into public.profiles (user_id)
+values ('10000000-0000-0000-0000-000000000001');
+
+select is(
+  (select count(*) from public.profiles where user_id = '10000000-0000-0000-0000-000000000001'),
+  1::bigint,
+  'an authenticated user can repair their own missing profile'
+);
+
+select throws_ok(
+  $$
+    insert into public.profiles (user_id)
+    values ('20000000-0000-0000-0000-000000000002')
+  $$,
+  '42501',
+  null,
+  'an authenticated user cannot create another account profile'
 );
 
 select throws_ok(

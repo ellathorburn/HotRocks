@@ -41,6 +41,8 @@ export const sessions = sqliteTable('sessions', {
   elapsedSeconds: integer('elapsed_seconds').notNull(),
   heatSeconds: integer('heat_seconds').notNull().default(0),
   coldSeconds: integer('cold_seconds').notNull().default(0),
+  restSeconds: integer('rest_seconds').notNull().default(0),
+  intervalCount: integer('interval_count').notNull().default(0),
   roundCount: integer('round_count').notNull(),
   rating: integer('rating'),
   note: text('note'),
@@ -52,6 +54,8 @@ export const sessions = sqliteTable('sessions', {
   index('sessions_venue_idx').on(table.venueId),
   check('sessions_positive_elapsed', sql`${table.elapsedSeconds} > 0`),
   check('sessions_elapsed_covers_parts', sql`${table.elapsedSeconds} >= ${table.heatSeconds} + ${table.coldSeconds}`),
+  check('sessions_non_negative_rest', sql`${table.restSeconds} >= 0`),
+  check('sessions_non_negative_interval_count', sql`${table.intervalCount} >= 0`),
   check('sessions_positive_round_count', sql`${table.roundCount} > 0`),
 ]);
 
@@ -80,6 +84,29 @@ export const roundParts = sqliteTable('round_parts', {
   uniqueIndex('round_parts_round_position_idx').on(table.roundId, table.position),
   uniqueIndex('round_parts_round_kind_idx').on(table.roundId, table.kind),
   check('round_parts_positive_duration', sql`${table.durationSeconds} > 0`),
+]);
+
+/** Canonical ordered timeline. Round tables remain temporarily for the current UI. */
+export const sessionIntervals = sqliteTable('session_intervals', {
+  id: text('id').primaryKey(),
+  ...ownedTimestamps,
+  sessionId: text('session_id').notNull().references(() => sessions.id, { onDelete: 'cascade' }),
+  position: integer('position').notNull(),
+  kind: text('kind', { enum: ['heat', 'cold', 'rest'] }).notNull(),
+  durationSeconds: integer('duration_seconds').notNull(),
+  temperatureCTenths: integer('temperature_c_tenths'),
+  startedAt: text('started_at'),
+  endedAt: text('ended_at'),
+}, (table) => [
+  index('session_intervals_session_idx').on(table.sessionId),
+  index('session_intervals_user_idx').on(table.userId),
+  uniqueIndex('session_intervals_session_position_idx').on(table.sessionId, table.position),
+  check('session_intervals_non_negative_position', sql`${table.position} >= 0`),
+  check('session_intervals_positive_duration', sql`${table.durationSeconds} > 0`),
+  check(
+    'session_intervals_rest_has_no_temperature',
+    sql`${table.kind} <> 'rest' OR ${table.temperatureCTenths} IS NULL`,
+  ),
 ]);
 
 export const sessionPhotos = sqliteTable('session_photos', {
@@ -146,3 +173,4 @@ export const syncState = sqliteTable('sync_state', {
 
 export type LocalSessionRow = typeof sessions.$inferSelect;
 export type LocalRoundPartRow = typeof roundParts.$inferSelect;
+export type LocalSessionIntervalRow = typeof sessionIntervals.$inferSelect;

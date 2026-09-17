@@ -157,6 +157,15 @@ export const Tracking = {
   label: 0.5,
 } as const;
 
+/**
+ * Display numerals: -2% tracking and a tight line box. RN takes letterSpacing
+ * in points, so both scale with the size. 1.1 rather than the CSS 1.0 keeps
+ * Rubik's descenders from clipping on Android.
+ */
+export function displayText(size: number) {
+  return { fontSize: size, letterSpacing: size * -0.02, lineHeight: Math.round(size * 1.1) };
+}
+
 export const Rubik = {
   regular: 'Rubik_400Regular',
   medium: 'Rubik_500Medium',

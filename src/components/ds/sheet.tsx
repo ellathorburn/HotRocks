@@ -36,7 +36,7 @@ export function Sheet({ children, title, open = true, onDismiss, style }: SheetP
           ]}>
           <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: theme.border, alignSelf: 'center', marginBottom: 16 }} />
           {title ? (
-            <Text style={{ fontFamily: Rubik.semibold, fontSize: Type.heading, color: theme.text, marginBottom: 16 }}>
+            <Text style={{ fontFamily: Rubik.semibold, fontSize: Type.heading, lineHeight: 29, letterSpacing: -0.24, color: theme.text, marginBottom: 16 }}>
               {title}
             </Text>
           ) : null}

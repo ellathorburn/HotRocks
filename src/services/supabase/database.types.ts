@@ -7,10 +7,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -141,6 +161,56 @@ export type Database = {
           },
         ]
       }
+      session_intervals: {
+        Row: {
+          created_at: string
+          duration_seconds: number
+          ended_at: string | null
+          id: string
+          kind: string
+          position: number
+          session_id: string
+          started_at: string | null
+          temperature_c_tenths: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          duration_seconds: number
+          ended_at?: string | null
+          id: string
+          kind: string
+          position: number
+          session_id: string
+          started_at?: string | null
+          temperature_c_tenths?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          duration_seconds?: number
+          ended_at?: string | null
+          id?: string
+          kind?: string
+          position?: number
+          session_id?: string
+          started_at?: string | null
+          temperature_c_tenths?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_intervals_session_owner_fk"
+            columns: ["session_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id", "user_id"]
+          },
+        ]
+      }
       session_photos: {
         Row: {
           created_at: string
@@ -204,8 +274,10 @@ export type Database = {
           entry_method: string
           heat_seconds: number
           id: string
+          interval_count: number
           note: string | null
           rating: number | null
+          rest_seconds: number
           revision: number
           round_count: number
           started_at: string
@@ -224,8 +296,10 @@ export type Database = {
           entry_method?: string
           heat_seconds?: number
           id: string
+          interval_count?: number
           note?: string | null
           rating?: number | null
+          rest_seconds?: number
           revision?: number
           round_count: number
           started_at: string
@@ -244,8 +318,10 @@ export type Database = {
           entry_method?: string
           heat_seconds?: number
           id?: string
+          interval_count?: number
           note?: string | null
           rating?: number | null
+          rest_seconds?: number
           revision?: number
           round_count?: number
           started_at?: string
@@ -548,7 +624,11 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
 } as const
+

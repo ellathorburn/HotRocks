@@ -33,7 +33,7 @@ export function NavBar({ title, showBack = false, onBack, trailing, trailingIcon
       {showBack ? (
         <IconButton icon="chevron-left" label="Back" size={36} onPress={onBack ?? (() => router.back())} style={{ marginLeft: -8 }} />
       ) : null}
-      <Text style={{ flex: 1, fontFamily: Rubik.semibold, fontSize: Type.heading, color: theme.text }}>{title}</Text>
+      <Text numberOfLines={1} style={{ flex: 1, fontFamily: Rubik.semibold, fontSize: Type.heading, lineHeight: 29, letterSpacing: -0.24, color: theme.text }}>{title}</Text>
       {trailing}
       {trailingIcon ? <IconButton icon={trailingIcon} label={title} size={38} onPress={onTrailingPress} /> : null}
     </View>

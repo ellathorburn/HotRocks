@@ -1,5 +1,5 @@
-import { type ReactNode } from 'react';
-import { TextInput, View, type ViewStyle } from 'react-native';
+import { forwardRef, type ReactNode } from 'react';
+import { TextInput, View, type TextInputProps, type ViewStyle } from 'react-native';
 
 import { Radius, Rubik, Type } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -11,10 +11,26 @@ type InputProps = {
   leading?: ReactNode;
   multiline?: boolean;
   style?: ViewStyle;
-};
+} & Pick<
+  TextInputProps,
+  | 'accessibilityHint'
+  | 'accessibilityLabel'
+  | 'autoCapitalize'
+  | 'autoComplete'
+  | 'editable'
+  | 'inputMode'
+  | 'onBlur'
+  | 'onSubmitEditing'
+  | 'returnKeyType'
+  | 'secureTextEntry'
+  | 'submitBehavior'
+>;
 
 /** Text or search input. 10px radius, 48px tall, hairline border. */
-export function Input({ value, placeholder, onChangeText, leading, multiline = false, style }: InputProps) {
+export const Input = forwardRef<TextInput, InputProps>(function Input(
+  { value, placeholder, onChangeText, leading, multiline = false, style, ...inputProps },
+  ref,
+) {
   const theme = useTheme();
 
   return (
@@ -36,6 +52,8 @@ export function Input({ value, placeholder, onChangeText, leading, multiline = f
       ]}>
       {leading}
       <TextInput
+        ref={ref}
+        {...inputProps}
         value={value}
         placeholder={placeholder}
         placeholderTextColor={theme.textSecondary}
@@ -53,4 +71,4 @@ export function Input({ value, placeholder, onChangeText, leading, multiline = f
       />
     </View>
   );
-}
+});

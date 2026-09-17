@@ -20,22 +20,30 @@ Status: implemented foundation, 16 September 2026.
 
 ## Domain and storage model
 
-A session is one visit and maps to one Strava activity. A round is one pass
-through heat, cold, or both. `round_parts` stores each heat/cold half internally;
-the word “segment” is never shown in the interface.
+A session is one visit and maps to one Strava activity. Its canonical shape is
+an ordered timeline of heat, cold and rest intervals. Adjacency is unrestricted:
+heat can follow heat, cold can follow cold, and a recorded break can appear at
+any position. A valid saved session contains at least one heat or cold interval.
+
+The interval foundation is additive while the redesigned screens are in
+progress. `session_intervals`, the version-two draft contract and their domain
+rules are implemented. The current interface still writes the legacy `rounds`
+and `round_parts` representation; those tables and its version-one sync payload
+must be removed when the screens switch to timeline drafts. New domain code
+must not add further round assumptions.
 
 Canonical durations are integer seconds. Temperatures are integer tenths of a
 degree Celsius. Unit choice is presentation-only. `heat_seconds` and
-`cold_seconds` are active totals; `elapsed_seconds` is wall-clock visit time and
-must be at least their sum.
+`cold_seconds` are active totals, `rest_seconds` is explicitly recorded break
+time, and `elapsed_seconds` is wall-clock visit time. Untracked time is the
+difference between elapsed time and all recorded intervals.
 
 The synchronized aggregate is:
 
 ```text
 session
 ├── optional venue snapshot/reference
-└── rounds (ordered)
-    └── round_parts (ordered heat/cold values)
+└── session_intervals (ordered heat/cold/rest values)
 ```
 
 Photos and Strava exports have independent workflows because they have different
@@ -80,9 +88,13 @@ is not SQLCipher-encrypted because SQLCipher requires a development build and is
 not available in Expo Go. Device storage encryption and OS sandboxing are the
 current at-rest boundary.
 
-Before production, sign-out behavior must be finalized: retain account-scoped
-rows for fast offline return, or purge that account’s rows on sign-out. Account
-deletion must purge them.
+Sign-out and account deletion purge the affected account's SQLite rows. Auth
+changes also invalidate active synchronization runs so a response started for a
+previous account cannot be applied after an account switch.
+
+Unsaved session handoff data is stored in account-scoped SQLite drafts. Routes
+carry only the draft ID; large or sensitive session payloads are never placed
+in URLs.
 
 ## Strava boundary
 

@@ -5,15 +5,19 @@ import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
+import { APP_SCHEME, AUTH_CALLBACK_PATH } from '@/config/app';
+import { validateNewAccountCredentials } from '@/features/auth/auth-credentials';
+import { purgeLocalAccountData } from '@/services/database/account-data';
 import { getSupabaseClient } from '@/services/supabase/client';
+import { invalidateSyncRuns } from '@/services/sync/sync-engine';
 
 WebBrowser.maybeCompleteAuthSession();
 
 export type AuthAttempt = 'authenticated' | 'cancelled';
 
 export const authRedirectUri = makeRedirectUri({
-  scheme: 'hotrocks',
-  path: 'auth/callback',
+  scheme: APP_SCHEME,
+  path: AUTH_CALLBACK_PATH,
 });
 
 export async function finishOAuthRedirect(url: string): Promise<void> {
@@ -176,27 +180,27 @@ export async function signInWithPassword(
 export async function createAccountWithPassword(
   email: string,
   password: string,
-): Promise<void> {
+): Promise<'authenticated' | 'confirmationRequired'> {
+  validateNewAccountCredentials(email, password);
   const { data, error } = await getSupabaseClient().auth.signUp({
     email: email.trim().toLowerCase(),
     password,
   });
   if (error) throw error;
-  if (!data.session) {
-    throw new Error(
-      'Account created, but email confirmation is enabled. Disable Confirm email in Supabase for development, then sign in.',
-    );
-  }
+  return data.session ? 'authenticated' : 'confirmationRequired';
 }
 
-export async function signOut(): Promise<void> {
+export async function signOut(userId?: string): Promise<void> {
+  invalidateSyncRuns();
   const { error } = await getSupabaseClient().auth.signOut();
   if (error) {
     throw error;
   }
+  if (userId) purgeLocalAccountData(userId);
 }
 
-export async function deleteAccount(): Promise<void> {
+export async function deleteAccount(userId: string): Promise<void> {
+  invalidateSyncRuns();
   const supabase = getSupabaseClient();
   const { error } = await supabase.functions.invoke('delete-account', {
     body: { confirmation: 'DELETE' },
@@ -206,4 +210,5 @@ export async function deleteAccount(): Promise<void> {
   }
 
   await supabase.auth.signOut({ scope: 'local' });
+  purgeLocalAccountData(userId);
 }

@@ -1,7 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { ulid } from 'ulid';
 
 import { calculateSessionTotals, sessionDraftSchema, type SessionDraft } from '../domain/session';
+import { createId } from '@/lib/ids';
 import { database } from '@/services/database/client';
 import { roundParts, rounds, sessionPhotos, sessions, syncOutbox, venues } from '@/services/database/schema';
 import { requestSync } from '@/services/sync/sync-engine';
@@ -32,7 +32,7 @@ export async function saveSession(input: SaveSessionInput): Promise<string> {
         ))
         .limit(1)
         .get();
-      venueId = existing?.id ?? ulid();
+      venueId = existing?.id ?? createId();
 
       if (existing) {
         tx.update(venues)
@@ -127,7 +127,7 @@ export async function saveSession(input: SaveSessionInput): Promise<string> {
     });
 
     tx.insert(syncOutbox).values({
-      id: ulid(),
+      id: createId(),
       userId: input.userId,
       aggregateType: 'session',
       aggregateId: draft.id,
@@ -182,7 +182,7 @@ export async function softDeleteSession(sessionId: string, userId: string): Prom
       .where(and(eq(sessionPhotos.sessionId, sessionId), eq(sessionPhotos.userId, userId)))
       .run();
     tx.insert(syncOutbox).values({
-      id: ulid(),
+      id: createId(),
       userId,
       aggregateType: 'session',
       aggregateId: sessionId,

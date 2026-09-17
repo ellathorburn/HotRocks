@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import { ulid } from 'ulid';
 import { useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,14 +11,18 @@ import {
   Input,
   Label,
   Rating,
+  RoundStrip,
   SegmentedControl,
   Sheet,
   TemperatureChips,
 } from '@/components/ds';
 import { NavBar } from '@/components/nav-bar';
 import { Rubik, ScreenGutter, Type } from '@/constants/theme';
+import { useAuth } from '@/features/auth/auth-context';
+import { createSessionDraft } from '@/features/sessions/data/session-draft-repository';
 import type { Round, RoundPartKind } from '@/features/sessions/domain/session';
 import { useTheme } from '@/hooks/use-theme';
+import { createId } from '@/lib/ids';
 
 const CARRIED_HEAT = 90;
 const CARRIED_COLD = 11;
@@ -31,6 +34,7 @@ const CARRIED_COLD = 11;
  */
 export default function LogRoundScreen() {
   const theme = useTheme();
+  const { user } = useAuth();
   const [rounds, setRounds] = useState<Round[]>([]);
   const [continueLastRound, setContinueLastRound] = useState(false);
   const roundNumber = continueLastRound ? rounds.length : rounds.length + 1;
@@ -41,7 +45,7 @@ export default function LogRoundScreen() {
   const [lastTemps, setLastTemps] = useState<Record<RoundPartKind, number>>({ heat: CARRIED_HEAT, cold: CARRIED_COLD });
   const [expanded, setExpanded] = useState(false);
   const [rating, setRating] = useState(4);
-  const [venue, setVenue] = useState('Löyly Kallio');
+  const [venue, setVenue] = useState('');
   const [note, setNote] = useState('');
   const [addAnotherOpen, setAddAnotherOpen] = useState(false);
 
@@ -52,19 +56,32 @@ export default function LogRoundScreen() {
   };
 
   const finish = (allRounds: Round[]) => {
-    router.replace({ pathname: '/session/summary', params: { rounds: JSON.stringify(allRounds), venue } });
+    if (!user) return;
+    const elapsedSeconds = allRounds
+      .flatMap((round) => round.parts)
+      .reduce((total, part) => total + part.durationSeconds, 0);
+    const draftId = createSessionDraft(user.id, {
+      rounds: allRounds,
+      venueName: venue.trim() || null,
+      rating: rating || null,
+      note: note.trim() || null,
+      startedAt: new Date(Date.now() - elapsedSeconds * 1000).toISOString(),
+      elapsedSeconds,
+      entryMethod: 'manual',
+    });
+    router.replace({ pathname: '/session/summary', params: { draftId } });
   };
 
   const saveRound = () => {
     const part = {
-      id: ulid(),
+      id: createId(),
       kind: type,
       durationSeconds: Math.round(mins * 60),
       temperatureCTenths: Math.round(temp * 10),
     };
     const next = continueLastRound
       ? rounds.map((round, index) => index === rounds.length - 1 ? { ...round, parts: [...round.parts, part] } : round)
-      : [...rounds, { id: ulid(), parts: [part] }];
+      : [...rounds, { id: createId(), parts: [part] }];
     setRounds(next);
     setLastTemps((current) => ({ ...current, [type]: temp }));
     setContinueLastRound(false);
@@ -78,8 +95,16 @@ export default function LogRoundScreen() {
     setAddAnotherOpen(false);
   };
 
-  const activeSeconds = rounds.flatMap((round) => round.parts).reduce((total, part) => total + part.durationSeconds, 0);
-  const totalLabel = `${Math.floor(activeSeconds / 60)}m logged · ${rounds.length} ${rounds.length === 1 ? 'round' : 'rounds'}`;
+  const loggedParts = rounds.flatMap((round) => round.parts);
+  const minutesOf = (kind: RoundPartKind) => Math.round(
+    loggedParts.filter((part) => part.kind === kind).reduce((total, part) => total + part.durationSeconds, 0) / 60,
+  );
+  const heatMinutes = minutesOf('heat');
+  const coldMinutes = minutesOf('cold');
+  const soFar = `${rounds.length === 1 ? 'One round' : `${rounds.length} rounds`} so far.`;
+  const totalLabel = coldMinutes > 0
+    ? `${soFar} ${heatMinutes} minutes in the heat, ${coldMinutes} in the cold.`
+    : `${soFar} ${heatMinutes} minutes in the heat.`;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
@@ -88,7 +113,7 @@ export default function LogRoundScreen() {
         showBack
         trailing={<Badge>{roundNumber > 1 ? `This session, round ${roundNumber}` : 'New session'}</Badge>}
       />
-      <ScrollView contentContainerStyle={{ paddingHorizontal: ScreenGutter, paddingBottom: 96 }}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: ScreenGutter, paddingBottom: 24 }}>
         <SegmentedControl
           value={type}
           onChange={(v) => selectType(v as RoundPartKind)}
@@ -135,7 +160,7 @@ export default function LogRoundScreen() {
         )}
       </ScrollView>
 
-      <View style={{ paddingHorizontal: ScreenGutter, paddingVertical: 8, paddingBottom: 28 }}>
+      <View style={{ paddingHorizontal: ScreenGutter, paddingTop: 8, paddingBottom: 28 }}>
         <Button size="lg" fullWidth onPress={saveRound}>
           Save round
         </Button>
@@ -145,11 +170,15 @@ export default function LogRoundScreen() {
         open={addAnotherOpen}
         title={`Round ${rounds.length} logged`}
         onDismiss={() => setAddAnotherOpen(false)}>
-        <View style={{ gap: 20 }}>
-          <Text style={{ fontFamily: Rubik.medium, fontSize: Type.body, color: theme.textSecondary, textAlign: 'center' }}>
+        <View>
+          <Text style={{ fontFamily: Rubik.regular, fontSize: Type.body, lineHeight: Type.body * 1.5, color: theme.textSecondary, marginBottom: 18 }}>
             {totalLabel}
           </Text>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
+          <RoundStrip
+            segments={loggedParts.map((part) => ({ type: part.kind, minutes: part.durationSeconds / 60, temp: part.temperatureCTenths === null ? null : part.temperatureCTenths / 10 }))}
+            height={40}
+          />
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
             <Button
               variant="secondary"
               size="lg"

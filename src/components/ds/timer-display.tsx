@@ -1,6 +1,6 @@
 import { Text, View, type ViewStyle } from 'react-native';
 
-import { Rubik } from '@/constants/theme';
+import { displayText, Rubik } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Label } from './label';
@@ -26,8 +26,7 @@ export function TimerDisplay({ time = '00:00', type = 'heat', state = 'running',
       <Text
         style={{
           fontFamily: Rubik.bold,
-          fontSize: size,
-          lineHeight: size * 1.05,
+          ...displayText(size),
           fontVariant: ['tabular-nums'],
           color: state === 'paused' ? theme.textSecondary : colour,
           textShadowColor: state === 'running' && hot ? 'rgba(227,83,54,0.35)' : 'transparent',

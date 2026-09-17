@@ -1,15 +1,18 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Alert, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Badge, Button, Icon, IconButton, ListRow, Rating, RoundStrip, StatsStrip, type RoundSegment } from '@/components/ds';
+import { Badge, Button, Icon, IconButton, Label, ListRow, Rating, RoundStrip, StatsStrip, type RoundSegment } from '@/components/ds';
 import { NavBar } from '@/components/nav-bar';
-import { Rubik, ScreenGutter, Type } from '@/constants/theme';
+import { displayText, Rubik, ScreenGutter, Type } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 import { softDeleteSession } from '@/features/sessions/data/session-repository';
 import { useTheme } from '@/hooks/use-theme';
+import { describeSessionPart, formatDuration } from '@/lib/format';
+import { singleRouteParam } from '@/lib/route-params';
 import { database } from '@/services/database/client';
 import { roundParts, rounds, sessions, stravaExports, syncOutbox } from '@/services/database/schema';
 
@@ -22,27 +25,11 @@ type PartRow = {
   temperatureCTenths: number | null;
 };
 
-function formatDuration(seconds: number) {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const remainder = seconds % 60;
-  return hours > 0
-    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
-    : `${minutes}:${String(remainder).padStart(2, '0')}`;
-}
-
-function describePart(part: PartRow) {
-  const duration = part.durationSeconds % 60 === 0
-    ? `${part.durationSeconds / 60} min`
-    : `${Math.floor(part.durationSeconds / 60)}m ${part.durationSeconds % 60}s`;
-  const temperature = part.temperatureCTenths === null ? '' : ` at ${part.temperatureCTenths / 10}°`;
-  return `${part.kind === 'heat' ? 'Sauna' : 'Plunge'} ${duration}${temperature}`;
-}
-
 export default function SessionDetailScreen() {
   const theme = useTheme();
   const { user } = useAuth();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const id = singleRouteParam(params.id) ?? '';
   const userId = user?.id ?? '';
   const { data: sessionRows = [], updatedAt } = useLiveQuery(
     database.select({
@@ -138,14 +125,13 @@ export default function SessionDetailScreen() {
         showBack
         trailing={
           <View style={{ flexDirection: 'row', gap: 2 }}>
-            <IconButton icon="pencil" label="Edit" size={38} />
             <IconButton icon="share-2" label="Share" size={38} onPress={() => router.push(`/share/${session.id}`)} />
           </View>
         }
       />
       <ScrollView contentContainerStyle={{ paddingHorizontal: ScreenGutter, paddingBottom: 28 }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
-          <Text style={{ fontFamily: Rubik.bold, fontSize: 56, color: theme.text, fontVariant: ['tabular-nums'] }}>
+          <Text style={{ fontFamily: Rubik.bold, ...displayText(56), color: theme.text, fontVariant: ['tabular-nums'] }}>
             {formatDuration(session.elapsedSeconds)}
           </Text>
           <Text style={{ fontFamily: Rubik.medium, fontSize: 18, color: theme.textSecondary }}>
@@ -167,8 +153,8 @@ export default function SessionDetailScreen() {
 
         <View style={{ marginTop: 20 }}>
           <StatsStrip stats={[
-            { label: 'Time in sauna', value: formatDuration(session.heatSeconds), tone: 'hot' },
-            { label: 'Time in plunge', value: formatDuration(session.coldSeconds), tone: 'cold' },
+            { label: 'Time in sauna', value: `${Math.round(session.heatSeconds / 60)} min`, tone: 'hot' },
+            { label: 'Time in plunge', value: `${Math.round(session.coldSeconds / 60)} min`, tone: 'cold' },
             { label: 'Peak', value: peakHeat === null ? '—' : `${peakHeat / 10}°`, tone: 'hot' },
           ]} />
         </View>
@@ -180,14 +166,12 @@ export default function SessionDetailScreen() {
         ) : null}
 
         <View style={{ marginTop: 20, gap: 2 }}>
-          <Text style={{ fontFamily: Rubik.medium, fontSize: Type.label, letterSpacing: 0.5, textTransform: 'uppercase', color: theme.textSecondary, marginBottom: 6 }}>
-            Rounds
-          </Text>
+          <Label style={{ marginBottom: 6 }}>Rounds</Label>
           {logicalRounds.map((round, index) => (
             <ListRow
               key={round[0].roundId}
               title={`Round ${index + 1}`}
-              meta={round.map(describePart).join(' · ')}
+              meta={round.map(describeSessionPart).join(' · ')}
               leading={<Icon name={round[0].kind === 'heat' ? 'flame' : 'snowflake'} size={20} color={round[0].kind === 'heat' ? theme.hot : theme.cold} />}
               chevron
             />
@@ -196,7 +180,11 @@ export default function SessionDetailScreen() {
 
         <View style={{ marginTop: 20, gap: 10 }}>
           {stravaExport?.stravaActivityId ? (
-            <Button variant="secondary" fullWidth iconLeft={<Icon name="external-link" size={18} color={theme.text} />}>
+            <Button
+              variant="secondary"
+              fullWidth
+              iconLeft={<Icon name="external-link" size={18} color={theme.text} />}
+              onPress={() => void Linking.openURL(`https://www.strava.com/activities/${stravaExport.stravaActivityId}`)}>
               View on Strava
             </Button>
           ) : null}

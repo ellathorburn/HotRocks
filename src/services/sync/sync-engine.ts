@@ -81,7 +81,28 @@ const pullResponseSchema = z.object({
 
 const MAX_BACKOFF_SECONDS = 60 * 60;
 const STALE_UPLOAD_MS = 2 * 60 * 1000;
-let activeRun: Promise<void> | null = null;
+const activeRuns = new Map<string, Promise<void>>();
+let syncEpoch = 0;
+
+class SyncCancelledError extends Error {
+  constructor() {
+    super('Sync was cancelled because the authenticated account changed.');
+  }
+}
+
+/** Invalidates in-flight work before an authentication transition. */
+export function invalidateSyncRuns(): void {
+  syncEpoch += 1;
+  activeRuns.clear();
+}
+
+async function assertSyncIdentity(userId: string, epoch: number): Promise<void> {
+  if (epoch !== syncEpoch) throw new SyncCancelledError();
+  const { data, error } = await getSupabaseClient().auth.getSession();
+  if (error || data.session?.user.id !== userId || epoch !== syncEpoch) {
+    throw new SyncCancelledError();
+  }
+}
 
 function retryAt(attempt: number): string {
   const seconds = Math.min(MAX_BACKOFF_SECONDS, 2 ** Math.min(attempt, 10) * 5);
@@ -93,7 +114,7 @@ function errorMessage(error: unknown): string {
   return 'Sync request failed';
 }
 
-async function uploadPendingSessions(userId: string): Promise<void> {
+async function uploadPendingSessions(userId: string, epoch: number): Promise<void> {
   const supabase = getSupabaseClient();
   const now = new Date().toISOString();
   const staleBefore = new Date(Date.now() - STALE_UPLOAD_MS).toISOString();
@@ -120,6 +141,7 @@ async function uploadPendingSessions(userId: string): Promise<void> {
     .all();
 
   for (const item of pending) {
+    await assertSyncIdentity(userId, epoch);
     database.update(syncOutbox)
       .set({ status: 'uploading' })
       .where(and(eq(syncOutbox.id, item.id), eq(syncOutbox.updatedAt, item.updatedAt)))
@@ -134,6 +156,7 @@ async function uploadPendingSessions(userId: string): Promise<void> {
         p_base_revision: payload.baseRevision,
       });
       if (error) throw error;
+      await assertSyncIdentity(userId, epoch);
 
       const response = syncResponseSchema.parse(data);
       if (response.status === 'conflict') {
@@ -171,6 +194,7 @@ async function uploadPendingSessions(userId: string): Promise<void> {
         }).where(eq(syncOutbox.id, item.id)).run();
       });
     } catch (error) {
+      if (error instanceof SyncCancelledError) throw error;
       const attemptCount = item.attemptCount + 1;
       database.update(syncOutbox).set({
         status: 'pending',
@@ -339,7 +363,7 @@ function applyRemoteChanges(
   return { cursor: appliedCursor, blocked };
 }
 
-async function pullRemoteSessions(userId: string): Promise<void> {
+async function pullRemoteSessions(userId: string, epoch: number): Promise<void> {
   const supabase = getSupabaseClient();
   let cursor = Number(database
     .select({ pullCursor: syncState.pullCursor })
@@ -348,11 +372,13 @@ async function pullRemoteSessions(userId: string): Promise<void> {
     .get()?.pullCursor ?? 0);
 
   for (;;) {
+    await assertSyncIdentity(userId, epoch);
     const { data, error } = await supabase.rpc('pull_session_changes', {
       p_after_sequence: cursor,
       p_limit: 50,
     });
     if (error) throw error;
+    await assertSyncIdentity(userId, epoch);
 
     const response = pullResponseSchema.parse(data);
     const applied = applyRemoteChanges(userId, response);
@@ -364,14 +390,16 @@ async function pullRemoteSessions(userId: string): Promise<void> {
 /** Coalesces concurrent triggers into one foreground upload pass. */
 export function requestSync(userId: string): Promise<void> {
   if (!hasSupabaseEnvironment()) return Promise.resolve();
-  if (activeRun) return activeRun;
+  const existingRun = activeRuns.get(userId);
+  if (existingRun) return existingRun;
 
-  activeRun = (async () => {
-    const { data } = await getSupabaseClient().auth.getSession();
-    if (data.session?.user.id !== userId) return;
-    await uploadPendingSessions(userId);
-    await pullRemoteSessions(userId);
+  const epoch = syncEpoch;
+  const run = (async () => {
+    await assertSyncIdentity(userId, epoch);
+    await uploadPendingSessions(userId, epoch);
+    await pullRemoteSessions(userId, epoch);
   })().catch((error) => {
+    if (error instanceof SyncCancelledError) return;
     database.insert(syncState).values({
       userId,
       pullCursor: null,
@@ -382,8 +410,9 @@ export function requestSync(userId: string): Promise<void> {
       set: { lastError: errorMessage(error) },
     }).run();
   }).finally(() => {
-    activeRun = null;
+    if (activeRuns.get(userId) === run) activeRuns.delete(userId);
   });
 
-  return activeRun;
+  activeRuns.set(userId, run);
+  return run;
 }

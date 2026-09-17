@@ -32,7 +32,9 @@ export function RoundStrip({ segments, height = 56, showLabels = true, radius = 
           <View
             key={i}
             style={{
-              width: `${pct}%`,
+              // flexGrow rather than a % width, so the gaps never push the last block out.
+              flexGrow: Math.max(s.minutes || 0, 0.01),
+              flexBasis: 0,
               minWidth: 10,
               backgroundColor: hot ? theme.hot : theme.cold,
               alignItems: 'center',
@@ -42,12 +44,16 @@ export function RoundStrip({ segments, height = 56, showLabels = true, radius = 
             }}>
             {showLabels && height >= 40 && pct > 8 ? (
               <>
-                <Text style={{ fontFamily: Rubik.semibold, fontSize: 15, color: theme.textOnAccent, fontVariant: ['tabular-nums'] }}>
-                  {s.minutes}′
+                <Text
+                  numberOfLines={1}
+                  style={{ fontFamily: Rubik.semibold, fontSize: 15, lineHeight: 16, color: theme.textOnAccent, fontVariant: ['tabular-nums'] }}>
+                  {Math.max(1, Math.round(s.minutes))}′
                 </Text>
                 {s.temp != null ? (
-                  <Text style={{ fontFamily: Rubik.medium, fontSize: 11, color: theme.textOnAccent, opacity: 0.75 }}>
-                    {s.temp}°
+                  <Text
+                    numberOfLines={1}
+                    style={{ fontFamily: Rubik.medium, fontSize: 11, lineHeight: 12, letterSpacing: 0.2, color: theme.textOnAccent, opacity: 0.75 }}>
+                    {Math.round(s.temp)}°
                   </Text>
                 ) : null}
               </>

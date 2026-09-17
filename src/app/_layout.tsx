@@ -7,54 +7,63 @@ import {
 } from '@expo-google-fonts/rubik';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { StyleSheet, useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { Button } from '@/components/ds';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 import { AuthProvider, useAuth } from '@/features/auth/auth-context';
+import { signOut } from '@/features/auth/auth-service';
 import { DatabaseProvider } from '@/services/database/database-provider';
 import { SyncProvider } from '@/services/sync/sync-provider';
 
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
-  const { isLoading, profile, session } = useAuth();
+  const { error, isLoading, profile, retry, session } = useAuth();
 
   if (isLoading) return null;
 
-  if (!session) {
+  if (error) {
     return (
-      <>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="sign-in" />
-        </Stack>
+      <ThemedView style={styles.errorContainer}>
+        <ThemedText type="subtitle">HotRocks could not load your account</ThemedText>
+        <ThemedText themeColor="textSecondary" style={styles.errorText}>{error}</ThemedText>
+        <Button onPress={retry}>Try again</Button>
+        {session ? (
+          <Button variant="ghost" onPress={() => void signOut(session.user.id).catch(() => undefined)}>Sign out</Button>
+        ) : null}
         <AnimatedSplashOverlay />
-      </>
+      </ThemedView>
     );
   }
 
-  if (!profile?.onboarding_completed_at) {
-    return (
-      <>
-        <Stack initialRouteName="onboarding/intro" screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="onboarding/intro" />
-          <Stack.Screen name="onboarding/round" />
-          <Stack.Screen name="onboarding/connect" />
-        </Stack>
-        <AnimatedSplashOverlay />
-      </>
-    );
-  }
+  const isOnboarded = Boolean(profile?.onboarding_completed_at);
 
   return (
     <>
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="log-round" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="session/[id]" />
-        <Stack.Screen name="session/summary" />
-        <Stack.Screen name="venue-picker" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="settings" />
-        <Stack.Screen name="share/[id]" />
+        <Stack.Protected guard={!session}>
+          <Stack.Screen name="sign-in" />
+          <Stack.Screen name="auth/callback" />
+        </Stack.Protected>
+
+        <Stack.Protected guard={Boolean(session) && !isOnboarded}>
+          <Stack.Screen name="onboarding/intro" />
+          <Stack.Screen name="onboarding/round" />
+          <Stack.Screen name="onboarding/connect" />
+        </Stack.Protected>
+
+        <Stack.Protected guard={Boolean(session) && isOnboarded}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="log-round" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="session/[id]" />
+          <Stack.Screen name="session/summary" />
+          <Stack.Screen name="venue-picker" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="share/[id]" />
+        </Stack.Protected>
       </Stack>
       <AnimatedSplashOverlay />
     </>
@@ -63,14 +72,14 @@ function RootNavigator() {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Rubik_400Regular,
     Rubik_500Medium,
     Rubik_600SemiBold,
     Rubik_700Bold,
   });
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded && !fontError) return null;
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -84,3 +93,14 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    paddingHorizontal: 24,
+  },
+  errorText: { textAlign: 'center' },
+});

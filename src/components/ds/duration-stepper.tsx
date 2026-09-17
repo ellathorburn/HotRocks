@@ -1,6 +1,6 @@
 import { Pressable, Text, View, type ViewStyle } from 'react-native';
 
-import { Radius, Rubik, Type } from '@/constants/theme';
+import { displayText, Radius, Rubik, Type } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Chip } from './chip';
@@ -41,7 +41,7 @@ export function DurationStepper({ value = 15, onChange, step = 1, presets = [10,
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         {roundButton(() => set(value - step), 'minus')}
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, justifyContent: 'center', flex: 1 }}>
-          <Text style={{ fontFamily: Rubik.bold, fontSize: Type.display, color: theme.text, fontVariant: ['tabular-nums'] }}>
+          <Text style={{ fontFamily: Rubik.bold, ...displayText(Type.display), color: theme.text, fontVariant: ['tabular-nums'] }}>
             {value}
           </Text>
           <Text style={{ fontFamily: Rubik.medium, fontSize: Type.subheading, color: theme.textSecondary }}>{unit}</Text>

@@ -1,7 +1,7 @@
 import { Text, View, type ViewStyle } from 'react-native';
 import Svg, { Ellipse } from 'react-native-svg';
 
-import { Rubik, Tracking } from '@/constants/theme';
+import { Rubik } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 type LogoProps = {
@@ -37,7 +37,7 @@ export function Logo({ variant = 'full', height = 28, style }: LogoProps) {
   }
 
   const wordmark = (
-    <Text style={{ fontFamily: Rubik.bold, fontSize: height * 0.95, letterSpacing: Tracking.display, lineHeight: height }}>
+    <Text style={{ fontFamily: Rubik.bold, fontSize: height * 0.95, letterSpacing: height * 0.95 * -0.02, lineHeight: Math.round(height * 1.15) }}>
       <Text style={{ color: theme.accent }}>Hot</Text>
       <Text style={{ color: onDark ? theme.sand : theme.cedar }}>Rocks</Text>
     </Text>

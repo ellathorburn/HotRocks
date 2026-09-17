@@ -1,6 +1,6 @@
 import { Text, View } from 'react-native';
 
-import { Rubik, Type } from '@/constants/theme';
+import { displayText, Rubik, Type } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Badge } from './badge';
@@ -30,7 +30,7 @@ export function SessionCard({ session, onPress }: SessionCardProps) {
 
   return (
     <Card onPress={onPress} padded={false}>
-      <View style={{ padding: 16, gap: 8 }}>
+      <View style={{ padding: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text
             numberOfLines={1}
@@ -39,15 +39,15 @@ export function SessionCard({ session, onPress }: SessionCardProps) {
           </Text>
           {!synced ? <Badge icon="cloud-off">On device</Badge> : null}
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-          <Text style={{ fontFamily: Rubik.bold, fontSize: 36, color: theme.text, fontVariant: ['tabular-nums'] }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 6 }}>
+          <Text style={{ fontFamily: Rubik.bold, ...displayText(36), color: theme.text, fontVariant: ['tabular-nums'] }}>
             {totalTime}
           </Text>
           <Text style={{ fontFamily: Rubik.regular, fontSize: Type.small, color: theme.textSecondary }}>
             {rounds} {rounds === 1 ? 'round' : 'rounds'}
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 }}>
           <Text style={{ fontFamily: Rubik.regular, fontSize: Type.small, color: theme.textSecondary }}>{date}</Text>
           {rating ? <Rating value={rating} readOnly size={14} /> : null}
         </View>

@@ -35,6 +35,8 @@ export function StatsStrip({ stats, style }: StatsStripProps) {
               style={{
                 fontFamily: Rubik.bold,
                 fontSize: 26,
+                lineHeight: 29,
+                letterSpacing: -0.52,
                 fontVariant: ['tabular-nums'],
                 color: s.tone === 'hot' ? theme.hot : s.tone === 'cold' ? theme.coldInk : theme.text,
               }}>
