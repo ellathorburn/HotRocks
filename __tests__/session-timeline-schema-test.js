@@ -28,9 +28,9 @@ describe('local session timeline schema', () => {
     database.prepare(`INSERT INTO sessions (
       id, user_id, created_at, updated_at, started_at, timezone_name,
       elapsed_seconds, heat_seconds, cold_seconds, rest_seconds,
-      interval_count, round_count, entry_method
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run('session-1', 'user-1', now, now, now, 'UTC', 1380, 900, 0, 480, 2, 1, 'manual');
+      interval_count, entry_method
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run('session-1', 'user-1', now, now, now, 'UTC', 1380, 900, 0, 480, 2, 'manual');
 
     database.prepare(`INSERT INTO session_intervals (
       id, user_id, created_at, updated_at, session_id, position,

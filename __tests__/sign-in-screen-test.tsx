@@ -7,6 +7,18 @@ import type { TextInput } from 'react-native';
 const mockSignInWithPassword = jest.fn<() => Promise<void>>();
 const mockCreateAccountWithPassword = jest.fn<() => Promise<'authenticated' | 'confirmationRequired'>>();
 
+const mockPush = jest.fn();
+const mockReplace = jest.fn();
+
+jest.mock('expo-router', () => ({
+  router: { push: mockPush, replace: mockReplace, back: jest.fn() },
+}));
+
+jest.mock('@/components/nav-bar', () => ({ NavBar: () => null }));
+
+// Provider buttons render native Apple and SVG components; covered separately.
+jest.mock('@/features/auth/components/social-auth-buttons', () => ({ SocialAuthButtons: () => null }));
+
 jest.mock('@/features/auth/auth-context', () => ({
   useAuth: () => ({ isConfigured: true }),
 }));
@@ -30,9 +42,9 @@ jest.mock('@/hooks/use-theme', () => ({
 }));
 
 jest.mock('@/constants/theme', () => ({
-  Rubik: { bold: 'Rubik', medium: 'Rubik', regular: 'Rubik' },
+  Rubik: { bold: 'Rubik', medium: 'Rubik', regular: 'Rubik', semibold: 'Rubik' },
   ScreenGutter: 20,
-  Type: { body: 16, small: 14 },
+  Type: { body: 16, small: 14, subheading: 18 },
 }));
 
 jest.mock('react-native-safe-area-context', () => {
@@ -61,32 +73,87 @@ jest.mock('@/components/ds', () => {
     Input: React.forwardRef<TextInput, ComponentProps<typeof TextInput>>((props, ref) => (
       <TextInput ref={ref} {...props} />
     )),
+    Card: ({ children }: { children: ReactNode }) => <>{children}</>,
     Label: ({ children }: { children: ReactNode }) => <Text>{children}</Text>,
     Logo: () => null,
   };
 });
 
 const SignInScreen = require('../src/app/sign-in').default;
+const SignUpScreen = require('../src/app/sign-up').default;
 
-async function fillCredentials(screen: Awaited<ReturnType<typeof render>>, password: string) {
+type Screen = Awaited<ReturnType<typeof render>>;
+
+async function fillCredentials(screen: Screen, password: string) {
   await fireEvent.changeText(screen.getByLabelText('Email address'), 'person@example.com');
   await fireEvent.changeText(screen.getByLabelText('Password'), password);
 }
 
-describe('email authentication form', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockSignInWithPassword.mockResolvedValue(undefined);
-    mockCreateAccountWithPassword.mockResolvedValue('authenticated');
-    jest.spyOn(console, 'error').mockImplementation(() => undefined);
-  });
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockSignInWithPassword.mockResolvedValue(undefined);
+  mockCreateAccountWithPassword.mockResolvedValue('authenticated');
+  jest.spyOn(console, 'error').mockImplementation(() => undefined);
+});
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
+afterEach(() => {
+  jest.restoreAllMocks();
+});
 
-  test('explains a short sign-up password and submits once it is corrected', async () => {
+describe('sign in screen', () => {
+  test('signs an existing account in, even with a short password', async () => {
     const screen = await render(<SignInScreen />);
+    await fillCredentials(screen, 'x');
+
+    await fireEvent.press(screen.getByText('Sign in'));
+
+    await waitFor(() => expect(mockSignInWithPassword).toHaveBeenCalledWith('person@example.com', 'x'));
+  });
+
+  test('explains missing fields instead of ignoring the tap', async () => {
+    const screen = await render(<SignInScreen />);
+
+    await fireEvent.press(screen.getByText('Sign in'));
+
+    expect(screen.getByText('Enter your email address.')).toBeTruthy();
+    expect(mockSignInWithPassword).not.toHaveBeenCalled();
+  });
+
+  test('shows safe, actionable feedback for a Supabase failure', async () => {
+    mockSignInWithPassword.mockRejectedValue(new AuthApiError('Backend details', 400, 'invalid_credentials'));
+    const screen = await render(<SignInScreen />);
+    await fillCredentials(screen, 'password');
+
+    await fireEvent.press(screen.getByText('Sign in'));
+
+    expect(await screen.findByText('Email or password is incorrect.')).toBeTruthy();
+  });
+
+  test('sends new people to the separate sign-up screen', async () => {
+    const screen = await render(<SignInScreen />);
+
+    await fireEvent.press(screen.getByText('Create an account'));
+
+    expect(mockPush).toHaveBeenCalledWith('/sign-up');
+  });
+});
+
+describe('sign up screen', () => {
+  test('responds to Create account on an empty form by explaining every missing field', async () => {
+    const screen = await render(<SignUpScreen />);
+
+    await fireEvent.press(screen.getByText('Create account'));
+
+    expect(screen.getByText('Enter your first name.')).toBeTruthy();
+    expect(screen.getByText('Enter your surname.')).toBeTruthy();
+    expect(screen.getByText('Enter your email address.')).toBeTruthy();
+    expect(mockCreateAccountWithPassword).not.toHaveBeenCalled();
+  });
+
+  test('creates the account with a name once the password is long enough', async () => {
+    const screen = await render(<SignUpScreen />);
+    await fireEvent.changeText(screen.getByLabelText('First name'), 'Ella');
+    await fireEvent.changeText(screen.getByLabelText('Surname'), 'Thorburn');
     await fillCredentials(screen, '12345');
 
     await fireEvent.press(screen.getByText('Create account'));
@@ -94,36 +161,24 @@ describe('email authentication form', () => {
     expect(mockCreateAccountWithPassword).not.toHaveBeenCalled();
 
     await fireEvent.changeText(screen.getByLabelText('Password'), '123456');
-    expect(screen.queryByText('Password must be at least 6 characters.')).toBeNull();
     await fireEvent.press(screen.getByText('Create account'));
 
     await waitFor(() => expect(mockCreateAccountWithPassword).toHaveBeenCalledWith(
+      { firstName: 'Ella', lastName: 'Thorburn' },
       'person@example.com',
       '123456',
     ));
   });
 
-  test('allows an existing account to sign in with a short password', async () => {
-    const screen = await render(<SignInScreen />);
-    await fillCredentials(screen, 'x');
+  test('tells the person to confirm their email when Supabase requires it', async () => {
+    mockCreateAccountWithPassword.mockResolvedValue('confirmationRequired');
+    const screen = await render(<SignUpScreen />);
+    await fireEvent.changeText(screen.getByLabelText('First name'), 'Ella');
+    await fireEvent.changeText(screen.getByLabelText('Surname'), 'Thorburn');
+    await fillCredentials(screen, '123456');
 
-    await fireEvent.press(screen.getByText('Sign in'));
+    await fireEvent.press(screen.getByText('Create account'));
 
-    await waitFor(() => expect(mockSignInWithPassword).toHaveBeenCalledWith(
-      'person@example.com',
-      'x',
-    ));
-  });
-
-  test('shows safe, actionable feedback for a Supabase failure', async () => {
-    mockSignInWithPassword.mockRejectedValue(
-      new AuthApiError('Backend details', 400, 'invalid_credentials'),
-    );
-    const screen = await render(<SignInScreen />);
-    await fillCredentials(screen, 'password');
-
-    await fireEvent.press(screen.getByText('Sign in'));
-
-    expect(await screen.findByText('Email or password is incorrect.')).toBeTruthy();
+    expect(await screen.findByText('We sent a confirmation link to person@example.com. Open it, then sign in.')).toBeTruthy();
   });
 });

@@ -12,19 +12,28 @@ import {
   getSupabaseClient,
   hasSupabaseEnvironment,
 } from '@/services/supabase/client';
-import type { Tables, TablesUpdate } from '@/services/supabase/database.types';
+import { profileService } from '@/features/profiles/services/profile-service';
+import type { Profile, ProfileUpdate } from '@/features/profiles/types/profile-types';
+import type { PersonName } from '@/features/auth/auth-credentials';
 import { invalidateSyncRuns } from '@/services/sync/sync-engine';
 
+/**
+ * UI-facing auth state. Profile persistence is delegated to profileService.
+ */
 type AuthState = {
   isConfigured: boolean;
   isLoading: boolean;
   session: Session | null;
   user: User | null;
-  profile: Tables<'profiles'> | null;
+  profile: Profile | null;
   error: string | null;
   retry: () => void;
   completeOnboarding: () => Promise<void>;
-  updateProfile: (patch: TablesUpdate<'profiles'>) => Promise<void>;
+  updateProfile: (patch: ProfileUpdate) => Promise<void>;
+  updateName: (name: PersonName) => Promise<void>;
+  /** True after a password-reset link signs the person in, until they set a new password. */
+  isPasswordRecovery: boolean;
+  finishPasswordRecovery: () => void;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -34,15 +43,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(isConfigured);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
-  const [profile, setProfile] = useState<Tables<'profiles'> | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState(0);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+  const finishPasswordRecovery = useCallback(() => setIsPasswordRecovery(false), []);
   const retry = useCallback(() => {
     setError(null);
     setIsAuthLoading(isConfigured);
     setRetryToken((value) => value + 1);
   }, [isConfigured]);
 
+  /** Initializes the verified Supabase auth session and auth event listener. */
   useEffect(() => {
     if (!isConfigured) {
       return;
@@ -90,7 +102,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (mounted) {
         setError(null);
         setSession(nextSession);
+        if (event === 'PASSWORD_RECOVERY') setIsPasswordRecovery(true);
         if (event === 'SIGNED_OUT') {
+          setIsPasswordRecovery(false);
           invalidateSyncRuns();
           setProfile(null);
           setIsProfileLoading(false);
@@ -108,46 +122,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }, [isConfigured, retryToken]);
 
+  /**
+   * Profile [READ], with a [CREATE] repair fallback for older/incomplete
+   * accounts, delegated to profileService.
+   */
   useEffect(() => {
     if (!isConfigured || !session?.user.id) {
       return;
     }
 
-    const supabase = getSupabaseClient();
     let mounted = true;
 
     void (async () => {
       try {
-        const { data, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
+        const data = await profileService.getOrCreate(session.user.id);
         if (!mounted) return;
-        if (profileError) {
-          setError(profileError.message);
-          setProfile(null);
-          setIsProfileLoading(false);
-          return;
-        }
-        if (!data) {
-          const { data: repairedProfile, error: repairError } = await supabase
-            .from('profiles')
-            .insert({ user_id: session.user.id })
-            .select('*')
-            .single();
-          if (!mounted) return;
-          if (repairError) {
-            setError(`Your account profile could not be repaired: ${repairError.message}`);
-            setProfile(null);
-            setIsProfileLoading(false);
-            return;
-          }
-          setError(null);
-          setProfile(repairedProfile);
-          setIsProfileLoading(false);
-          return;
-        }
         setError(null);
         setProfile(data);
         setIsProfileLoading(false);
@@ -164,32 +153,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }, [isConfigured, retryToken, session?.user.id]);
 
+  /** Profile [UPDATE]: records that the signed-in user finished onboarding. */
   const completeOnboarding = async () => {
     if (!session?.user.id) {
       throw new Error('You must be signed in to complete onboarding.');
     }
 
-    const { data, error } = await getSupabaseClient()
-      .from('profiles')
-      .update({ onboarding_completed_at: new Date().toISOString() })
-      .eq('user_id', session.user.id)
-      .select('*')
-      .single();
-
-    if (error) throw error;
-    setProfile(data);
+    setProfile(await profileService.completeOnboarding(session.user.id));
   };
 
-  const updateProfile = async (patch: TablesUpdate<'profiles'>) => {
+  /** Profile [UPDATE]: applies an allowed generated Supabase profile patch. */
+  const updateProfile = async (patch: ProfileUpdate) => {
     if (!session?.user.id) throw new Error('You must be signed in to update your profile.');
-    const { data, error: updateError } = await getSupabaseClient()
-      .from('profiles')
-      .update(patch)
-      .eq('user_id', session.user.id)
-      .select('*')
-      .single();
-    if (updateError) throw updateError;
-    setProfile(data);
+    setProfile(await profileService.update(session.user.id, patch));
+  };
+
+  /** Profile [UPDATE]: validated first name and surname. */
+  const updateName = async (name: PersonName) => {
+    if (!session?.user.id) throw new Error('You must be signed in to update your name.');
+    setProfile(await profileService.updateName(session.user.id, name));
   };
 
   const value: AuthState = {
@@ -202,6 +184,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
     retry,
     completeOnboarding,
     updateProfile,
+    updateName,
+    isPasswordRecovery,
+    finishPasswordRecovery,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

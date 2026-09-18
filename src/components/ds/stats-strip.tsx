@@ -12,38 +12,52 @@ type StatsStripProps = {
   style?: ViewStyle;
 };
 
-/** Compact totals row: sessions, rounds, time. Labels read Sauna and Plunge, never Heat/Cold. */
+/**
+ * Totals as a grid of at most two per row, so labels never break mid-word and
+ * values stay on one line on narrow phones. Labels read Sauna, Plunge and
+ * Break, never Heat/Cold.
+ */
 export function StatsStrip({ stats, style }: StatsStripProps) {
   const theme = useTheme();
+  const rows = Array.from({ length: Math.ceil(stats.length / 2) }, (_, index) => stats.slice(index * 2, index * 2 + 2));
 
   return (
-    <View style={[{ flexDirection: 'row' }, style]}>
-      {stats.map((s, i) => (
-        <View
-          key={i}
-          style={{
-            flex: 1,
-            gap: 4,
-            paddingRight: 8,
-            paddingLeft: i === 0 ? 0 : 14,
-            borderLeftWidth: i === 0 ? 0 : 1,
-            borderLeftColor: theme.border,
-          }}>
-          <Label>{s.label}</Label>
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3 }}>
-            <Text
+    <View style={[{ gap: 14 }, style]}>
+      {rows.map((row, rowIndex) => (
+        <View key={rowIndex} style={{ flexDirection: 'row' }}>
+          {row.map((stat, index) => (
+            <View
+              key={stat.label}
               style={{
-                fontFamily: Rubik.bold,
-                fontSize: 26,
-                lineHeight: 29,
-                letterSpacing: -0.52,
-                fontVariant: ['tabular-nums'],
-                color: s.tone === 'hot' ? theme.hot : s.tone === 'cold' ? theme.coldInk : theme.text,
+                flex: 1,
+                gap: 4,
+                paddingRight: 8,
+                paddingLeft: index === 0 ? 0 : 14,
+                borderLeftWidth: index === 0 ? 0 : 1,
+                borderLeftColor: theme.border,
               }}>
-              {s.value}
-            </Text>
-            {s.unit ? <Text style={{ fontFamily: Rubik.regular, fontSize: 13, color: theme.textSecondary }}>{s.unit}</Text> : null}
-          </View>
+              <Label numberOfLines={1}>{stat.label}</Label>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3 }}>
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                  style={{
+                    flexShrink: 1,
+                    fontFamily: Rubik.bold,
+                    fontSize: 24,
+                    lineHeight: 28,
+                    letterSpacing: -0.48,
+                    fontVariant: ['tabular-nums'],
+                    color: stat.tone === 'hot' ? theme.hot : stat.tone === 'cold' ? theme.coldInk : theme.text,
+                  }}>
+                  {stat.value}
+                </Text>
+                {stat.unit ? <Text style={{ fontFamily: Rubik.regular, fontSize: 13, color: theme.textSecondary }}>{stat.unit}</Text> : null}
+              </View>
+            </View>
+          ))}
+          {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
         </View>
       ))}
     </View>

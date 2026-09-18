@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -51,7 +52,17 @@ export default function SettingsScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
       <NavBar title="Settings" showBack />
       <ScrollView contentContainerStyle={{ paddingHorizontal: ScreenGutter, paddingBottom: 40 }}>
-        <Label style={{ marginVertical: 8 }}>Units</Label>
+        <Label style={{ marginVertical: 8 }}>You</Label>
+        <Card padded={false}>
+          <ListRow
+            title="Name"
+            meta={[profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || 'Not set'}
+            chevron
+            onPress={() => router.push('/edit-name')}
+          />
+        </Card>
+
+        <Label style={{ marginTop: 20, marginBottom: 8 }}>Units</Label>
         <Card padded={false}>
           <ListRow
             title="Temperature"
@@ -68,6 +79,18 @@ export default function SettingsScreen() {
         <Label style={{ marginTop: 20, marginBottom: 8 }}>Strava</Label>
         <Card padded={false}>
           <ListRow title="Not connected" meta="Strava connection is coming in a later release." />
+          <ListRow title="Default sport type" meta={profile?.default_strava_sport_type ?? 'Workout'} />
+          <ListRow
+            title="Post publicly by default"
+            trailing={(
+              <Toggle
+                checked={profile?.default_post_to_strava ?? true}
+                onChange={(checked) => void runAccountAction(
+                  () => updateProfile({ default_post_to_strava: checked }),
+                )}
+              />
+            )}
+          />
         </Card>
 
         <Text style={{ marginTop: 20, fontFamily: Rubik.regular, fontSize: Type.small, lineHeight: Type.small * 1.5, color: theme.textSecondary }}>

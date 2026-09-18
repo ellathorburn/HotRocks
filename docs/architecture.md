@@ -1,6 +1,12 @@
 # HotRocks architecture
 
-Status: implemented foundation, 16 September 2026.
+Status: timeline model implemented, 18 September 2026.
+
+For a Laravel-oriented guide to where types, CRUD functions, and screens live,
+see [Code map](./code-map.md).
+
+For screen-level usage examples, loading/error rules, and allowed imports, see
+[Frontend data access](./frontend-data-access.md).
 
 ## Decisions
 
@@ -18,25 +24,49 @@ Status: implemented foundation, 16 September 2026.
 - Strava credentials stay encrypted server-side and never enter SQLite or the
   Expo bundle.
 
+## Local migrations
+
+Generate SQLite migrations with `npm run local-db:generate -- --name <name>`,
+then check `drizzle/migrations.js` before committing. drizzle-kit rewrites that
+file without the `journal` block the Expo migrator needs, which breaks
+typechecking. Restore the journal and add an entry for the new migration.
+Never change the `when` value of an entry that has already shipped: the
+migrator compares it with the timestamp devices recorded, and a later value
+makes the migration run again.
+
+A migration that tightens a constraint must first delete or fix any rows that
+would break it. The SQLite rebuild copies every row into the new table, so one
+bad row fails the whole migration. `__tests__/local-schema-test.js` has an
+example that seeds such rows and runs the migration.
+
 ## Domain and storage model
 
-A session is one visit and maps to one Strava activity. Its canonical shape is
-an ordered timeline of heat, cold and rest intervals. Adjacency is unrestricted:
-heat can follow heat, cold can follow cold, and a recorded break can appear at
-any position. A valid saved session contains at least one heat or cold interval.
-
-The interval foundation is additive while the redesigned screens are in
-progress. `session_intervals`, the version-two draft contract and their domain
-rules are implemented. The current interface still writes the legacy `rounds`
-and `round_parts` representation; those tables and its version-one sync payload
-must be removed when the screens switch to timeline drafts. New domain code
-must not add further round assumptions.
+A session is one visit and maps to one Strava activity. Its shape is an
+ordered timeline of heat, cold and rest intervals. Adjacency is otherwise
+unrestricted: heat can follow heat, cold can follow cold, and a break can
+appear anywhere except first. A valid saved session contains at least one heat
+or cold interval. See [Session timeline cutover](./session-timeline-cutover.md).
 
 Canonical durations are integer seconds. Temperatures are integer tenths of a
 degree Celsius. Unit choice is presentation-only. `heat_seconds` and
 `cold_seconds` are active totals, `rest_seconds` is explicitly recorded break
 time, and `elapsed_seconds` is wall-clock visit time. Untracked time is the
 difference between elapsed time and all recorded intervals.
+
+Every interval lasts at least 30 seconds (`MIN_INTERVAL_SECONDS`). App
+validation, the SQLite `session_intervals_min_duration` check and the
+matching Postgres check all enforce it. Storage keeps the exact seconds the
+timer measured. Rounding happens only for display, so the display rule can
+change without a data migration:
+
+- Durations show in steps of 30 seconds, then whole minutes, rounded to the
+  nearest step: 30–44 s show as "30 sec", 45–89 s as "1 min", and from 90 s
+  the nearest minute, with halves rounding up.
+- Totals add up raw seconds and round once. A total can therefore differ from
+  the sum of its rounded rows, which is intended.
+- `formatStepDuration` (`src/lib/format.ts`) gives the full form ("30 sec",
+  "15 min"). `formatStepDurationCompact` gives the compact form (`30″`, `15′`)
+  for tight spaces such as the timeline strip.
 
 The synchronized aggregate is:
 
@@ -51,9 +81,9 @@ failure modes and retry requirements.
 
 ## Write path
 
-1. A domain command validates the draft and calculates totals.
-2. One SQLite transaction writes the venue, session, rounds, round parts and a
-   coalesced `sync_outbox` operation.
+1. A session service validates the draft and calculates totals.
+2. One SQLite transaction writes the venue, session, ordered intervals, a
+   coalesced `sync_outbox` operation, and removes the consumed draft.
 3. Drizzle live queries update the interface immediately.
 4. The sync worker runs after the save, on app launch/foreground, and every 30
    seconds while active.
@@ -65,7 +95,7 @@ failure modes and retry requirements.
 
 The RPC uses an idempotency key, optimistic base revision and stored response.
 An interrupted request can therefore be repeated without creating duplicate
-rounds. Transient failures use capped exponential backoff. Revision conflicts
+intervals. Transient failures use capped exponential backoff. Revision conflicts
 become `action_required` rather than silently overwriting another device.
 
 ## Read path

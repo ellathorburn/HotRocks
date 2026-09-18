@@ -11,7 +11,8 @@ The UI can call the functions exported by
 - `signInWithApple()` uses native Apple Authentication on iOS and browser OAuth
   elsewhere.
 - `signInWithGoogle()` uses Supabase PKCE OAuth in the system browser.
-- `signInWithPassword(email, password)` and `createAccountWithPassword(...)`
+- `signInWithPassword(email, password)` and
+  `createAccountWithPassword({ firstName, lastName }, email, password)`
   provide a development fallback that needs no SMTP when email confirmation is
   disabled in the Supabase project.
 - `requestEmailOtp(email)` and `verifyEmailOtp(email, code)` remain ready for
@@ -21,10 +22,21 @@ The UI can call the functions exported by
 - `deleteAccount(userId)` invokes the authenticated server function, removes
   stored photos, deletes the Auth user and purges local account data.
 
-`useAuth()` exposes configuration, loading, session, user, profile, retry and
-profile-update state. The root navigator uses Expo Router protected routes to
-admit only the routes valid for the current authentication and onboarding
-state. Native sessions are stored in chunked Expo SecureStore values; web
+`useAuth()` exposes configuration, loading, session, user, profile, retry,
+profile-update and `updateName` state. The root navigator uses Expo Router
+protected routes to admit only the routes valid for the current state:
+
+1. Signed out: `/sign-in` (returning users) and `/sign-up` (new accounts).
+2. Signed in without a name: `/complete-profile`.
+3. Named but not onboarded: onboarding.
+4. Otherwise: the app.
+
+Every profile has `first_name` and `last_name`. Email sign-up sends them as
+metadata and the `handle_new_user` trigger seeds the profile; Google's
+`given_name`/`family_name` are used the same way; Apple's name, which arrives
+only after the account exists, is applied by `profileService.fillMissingName`.
+Anyone still without a name completes it before onboarding. The name can be
+changed from Settings. Native sessions are stored in chunked Expo SecureStore values; web
 sessions use AsyncStorage. Refreshing runs only while the native app is
 foregrounded.
 

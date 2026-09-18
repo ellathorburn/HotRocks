@@ -14,10 +14,13 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
  */
 export const ThemeSchemeContext = createContext<'light' | 'dark' | null>(null);
 
-export function useTheme() {
+/** The scheme a subtree renders in, for components that pick brand assets by scheme. */
+export function useThemeScheme(): 'light' | 'dark' {
   const forced = use(ThemeSchemeContext);
   const scheme = useColorScheme();
-  const theme = forced ?? (scheme === 'dark' ? 'dark' : 'light');
+  return forced ?? (scheme === 'dark' ? 'dark' : 'light');
+}
 
-  return Colors[theme];
+export function useTheme() {
+  return Colors[useThemeScheme()];
 }

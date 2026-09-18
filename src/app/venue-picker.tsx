@@ -1,5 +1,3 @@
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
-import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { FlatList, View } from 'react-native';
@@ -8,34 +6,27 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Icon, Input, Label, ListRow } from '@/components/ds';
 import { NavBar } from '@/components/nav-bar';
 import { ScreenGutter } from '@/constants/theme';
-import { useAuth } from '@/features/auth/auth-context';
-import { readSessionDraft, updateSessionDraft } from '@/features/sessions/data/session-draft-repository';
+import { useDisplayPreferences } from '@/features/profiles/hooks/use-display-preferences';
+import { useSessionTimelineDraft } from '@/features/sessions/hooks/use-session-timeline-draft';
+import { useVenues } from '@/features/sessions/hooks/use-venues';
+import { sessionTimelineDraftService } from '@/features/sessions/services/session-draft-service';
 import { useTheme } from '@/hooks/use-theme';
 import { singleRouteParam } from '@/lib/route-params';
-import { database } from '@/services/database/client';
-import { venues as venueTable } from '@/services/database/schema';
 
 export default function VenuePickerScreen() {
   const theme = useTheme();
-  const { user } = useAuth();
+  const preferences = useDisplayPreferences();
   const params = useLocalSearchParams<{ draftId?: string | string[] }>();
   const draftId = singleRouteParam(params.draftId);
   const [query, setQuery] = useState('');
-  const userId = user?.id ?? '';
-  const draft = draftId && user ? readSessionDraft(draftId, user.id) : null;
-  const { data: savedVenues = [] } = useLiveQuery(
-    database.select({ id: venueTable.id, name: venueTable.name, lastUsedAt: venueTable.lastUsedAt })
-      .from(venueTable)
-      .where(and(eq(venueTable.userId, userId), isNull(venueTable.deletedAt)))
-      .orderBy(desc(venueTable.lastUsedAt), asc(venueTable.name)),
-    [userId],
-  );
+  const { draft } = useSessionTimelineDraft(draftId ?? '', preferences);
+  const savedVenues = useVenues(preferences);
   const venues = savedVenues.filter((venue) => venue.name.toLowerCase().includes(query.trim().toLowerCase()));
   const exactMatch = savedVenues.some((venue) => venue.name.toLowerCase() === query.trim().toLowerCase());
 
   const selectVenue = (venue: string) => {
-    if (!draftId || !user) return;
-    updateSessionDraft(draftId, user.id, (current) => ({ ...current, venueName: venue }));
+    if (!draftId || !preferences.userId) return;
+    sessionTimelineDraftService.setVenue(draftId, preferences.userId, venue);
     router.dismissTo({ pathname: '/session/summary', params: { draftId } });
   };
 
@@ -53,9 +44,15 @@ export default function VenuePickerScreen() {
             renderItem={({ item }) => (
               <ListRow
                 title={item.name}
-                meta={item.lastUsedAt ? `Last used ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(item.lastUsedAt))}` : 'Saved venue'}
+                meta={item.meta}
                 selected={item.name === draft?.venueName}
-                leading={<Icon name="map-pin" size={20} color={theme.textSecondary} />}
+                leading={(
+                  <Icon
+                    name={item.coldOnly ? 'snowflake' : 'map-pin'}
+                    size={20}
+                    color={item.coldOnly ? theme.cold : theme.textSecondary}
+                  />
+                )}
                 onPress={() => selectVenue(item.name)}
               />
             )}

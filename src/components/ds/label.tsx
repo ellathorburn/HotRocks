@@ -7,10 +7,11 @@ type LabelProps = {
   children: React.ReactNode;
   tone?: 'secondary' | 'primary' | 'hot' | 'cold';
   style?: TextStyle;
+  numberOfLines?: number;
 };
 
 /** 12px uppercase caption with +4% tracking. Field labels and stat captions. */
-export function Label({ children, tone = 'secondary', style }: LabelProps) {
+export function Label({ children, tone = 'secondary', style, numberOfLines }: LabelProps) {
   const theme = useTheme();
   const colors = {
     secondary: theme.textSecondary,
@@ -21,6 +22,7 @@ export function Label({ children, tone = 'secondary', style }: LabelProps) {
 
   return (
     <Text
+      numberOfLines={numberOfLines}
       style={[
         {
           fontFamily: Rubik.medium,

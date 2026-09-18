@@ -15,13 +15,14 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AuthProvider, useAuth } from '@/features/auth/auth-context';
 import { signOut } from '@/features/auth/auth-service';
+import { hasProfileName } from '@/features/profiles/types/profile-types';
 import { DatabaseProvider } from '@/services/database/database-provider';
 import { SyncProvider } from '@/services/sync/sync-provider';
 
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
-  const { error, isLoading, profile, retry, session } = useAuth();
+  const { error, isLoading, isPasswordRecovery, profile, retry, session } = useAuth();
 
   if (isLoading) return null;
 
@@ -40,28 +41,42 @@ function RootNavigator() {
   }
 
   const isOnboarded = Boolean(profile?.onboarding_completed_at);
+  const hasName = hasProfileName(profile);
+  // A reset link signs the person in; they choose a new password before anything else.
+  const signedIn = Boolean(session) && !isPasswordRecovery;
 
   return (
     <>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Protected guard={!session}>
           <Stack.Screen name="sign-in" />
+          <Stack.Screen name="sign-up" />
+          <Stack.Screen name="forgot-password" />
           <Stack.Screen name="auth/callback" />
         </Stack.Protected>
 
-        <Stack.Protected guard={Boolean(session) && !isOnboarded}>
+        <Stack.Protected guard={Boolean(session) && isPasswordRecovery}>
+          <Stack.Screen name="reset-password" />
+        </Stack.Protected>
+
+        <Stack.Protected guard={signedIn && !hasName}>
+          <Stack.Screen name="complete-profile" />
+        </Stack.Protected>
+
+        <Stack.Protected guard={signedIn && hasName && !isOnboarded}>
           <Stack.Screen name="onboarding/intro" />
-          <Stack.Screen name="onboarding/round" />
+          <Stack.Screen name="onboarding/timeline" />
           <Stack.Screen name="onboarding/connect" />
         </Stack.Protected>
 
-        <Stack.Protected guard={Boolean(session) && isOnboarded}>
+        <Stack.Protected guard={signedIn && hasName && isOnboarded}>
           <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="log-round" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="log-session" options={{ presentation: 'modal' }} />
           <Stack.Screen name="session/[id]" />
           <Stack.Screen name="session/summary" />
           <Stack.Screen name="venue-picker" options={{ presentation: 'modal' }} />
           <Stack.Screen name="settings" />
+          <Stack.Screen name="edit-name" />
           <Stack.Screen name="share/[id]" />
         </Stack.Protected>
       </Stack>

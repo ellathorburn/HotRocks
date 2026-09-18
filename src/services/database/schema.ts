@@ -1,6 +1,15 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
+/**
+ * SQLITE PERSISTENCE SCHEMA
+ *
+ * These declarations describe on-device tables, constraints, and database-row
+ * shapes. They are storage types, not the application types used by
+ * screens and services. Session application types live under
+ * `src/features/sessions/types/`.
+ */
+
 const ownedTimestamps = {
   userId: text('user_id').notNull(),
   createdAt: text('created_at').notNull(),
@@ -43,7 +52,6 @@ export const sessions = sqliteTable('sessions', {
   coldSeconds: integer('cold_seconds').notNull().default(0),
   restSeconds: integer('rest_seconds').notNull().default(0),
   intervalCount: integer('interval_count').notNull().default(0),
-  roundCount: integer('round_count').notNull(),
   rating: integer('rating'),
   note: text('note'),
   entryMethod: text('entry_method', { enum: ['manual', 'timer', 'repeat'] }).notNull(),
@@ -53,40 +61,15 @@ export const sessions = sqliteTable('sessions', {
   index('sessions_user_started_idx').on(table.userId, table.startedAt),
   index('sessions_venue_idx').on(table.venueId),
   check('sessions_positive_elapsed', sql`${table.elapsedSeconds} > 0`),
-  check('sessions_elapsed_covers_parts', sql`${table.elapsedSeconds} >= ${table.heatSeconds} + ${table.coldSeconds}`),
+  check(
+    'sessions_elapsed_covers_intervals',
+    sql`${table.elapsedSeconds} >= ${table.heatSeconds} + ${table.coldSeconds} + ${table.restSeconds}`,
+  ),
   check('sessions_non_negative_rest', sql`${table.restSeconds} >= 0`),
   check('sessions_non_negative_interval_count', sql`${table.intervalCount} >= 0`),
-  check('sessions_positive_round_count', sql`${table.roundCount} > 0`),
 ]);
 
-export const rounds = sqliteTable('rounds', {
-  id: text('id').primaryKey(),
-  ...ownedTimestamps,
-  sessionId: text('session_id').notNull().references(() => sessions.id, { onDelete: 'cascade' }),
-  position: integer('position').notNull(),
-}, (table) => [
-  uniqueIndex('rounds_session_position_idx').on(table.sessionId, table.position),
-]);
-
-export const roundParts = sqliteTable('round_parts', {
-  id: text('id').primaryKey(),
-  ...ownedTimestamps,
-  sessionId: text('session_id').notNull().references(() => sessions.id, { onDelete: 'cascade' }),
-  roundId: text('round_id').notNull().references(() => rounds.id, { onDelete: 'cascade' }),
-  position: integer('position').notNull(),
-  kind: text('kind', { enum: ['heat', 'cold'] }).notNull(),
-  durationSeconds: integer('duration_seconds').notNull(),
-  temperatureCTenths: integer('temperature_c_tenths'),
-  startedAt: text('started_at'),
-  endedAt: text('ended_at'),
-}, (table) => [
-  index('round_parts_session_idx').on(table.sessionId),
-  uniqueIndex('round_parts_round_position_idx').on(table.roundId, table.position),
-  uniqueIndex('round_parts_round_kind_idx').on(table.roundId, table.kind),
-  check('round_parts_positive_duration', sql`${table.durationSeconds} > 0`),
-]);
-
-/** Canonical ordered timeline. Round tables remain temporarily for the current UI. */
+/** Canonical ordered timeline of heat, cold and rest intervals for one session. */
 export const sessionIntervals = sqliteTable('session_intervals', {
   id: text('id').primaryKey(),
   ...ownedTimestamps,
@@ -102,7 +85,7 @@ export const sessionIntervals = sqliteTable('session_intervals', {
   index('session_intervals_user_idx').on(table.userId),
   uniqueIndex('session_intervals_session_position_idx').on(table.sessionId, table.position),
   check('session_intervals_non_negative_position', sql`${table.position} >= 0`),
-  check('session_intervals_positive_duration', sql`${table.durationSeconds} > 0`),
+  check('session_intervals_min_duration', sql`${table.durationSeconds} >= 30`),
   check(
     'session_intervals_rest_has_no_temperature',
     sql`${table.kind} <> 'rest' OR ${table.temperatureCTenths} IS NULL`,
@@ -171,6 +154,10 @@ export const syncState = sqliteTable('sync_state', {
   lastError: text('last_error'),
 });
 
+/**
+ * Read-row types inferred directly from the SQLite schema above. Remote
+ * Supabase row types are generated in `services/supabase/database.types.ts`;
+ * do not edit that generated file by hand.
+ */
 export type LocalSessionRow = typeof sessions.$inferSelect;
-export type LocalRoundPartRow = typeof roundParts.$inferSelect;
 export type LocalSessionIntervalRow = typeof sessionIntervals.$inferSelect;

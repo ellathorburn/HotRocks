@@ -2,6 +2,14 @@
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
+## Developer documentation
+
+- [Frontend data access](./docs/frontend-data-access.md): how screens read and
+  write authenticated application data.
+- [Code map](./docs/code-map.md): where types, hooks, services, storage, and
+  synchronization code live.
+- [Architecture](./docs/architecture.md): local-first and cloud-sync decisions.
+
 ## Get started
 
 1. Install dependencies

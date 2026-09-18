@@ -39,7 +39,9 @@ export type Database = {
           created_at: string
           default_post_to_strava: boolean
           default_strava_sport_type: string
+          first_name: string | null
           id: string
+          last_name: string | null
           onboarding_completed_at: string | null
           strava_description_template: string
           temperature_unit: string
@@ -51,7 +53,9 @@ export type Database = {
           created_at?: string
           default_post_to_strava?: boolean
           default_strava_sport_type?: string
+          first_name?: string | null
           id?: string
+          last_name?: string | null
           onboarding_completed_at?: string | null
           strava_description_template?: string
           temperature_unit?: string
@@ -63,7 +67,9 @@ export type Database = {
           created_at?: string
           default_post_to_strava?: boolean
           default_strava_sport_type?: string
+          first_name?: string | null
           id?: string
+          last_name?: string | null
           onboarding_completed_at?: string | null
           strava_description_template?: string
           temperature_unit?: string
@@ -72,94 +78,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
-      }
-      round_parts: {
-        Row: {
-          created_at: string
-          duration_seconds: number
-          ended_at: string | null
-          id: string
-          kind: string
-          position: number
-          round_id: string
-          session_id: string
-          started_at: string | null
-          temperature_c_tenths: number | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          duration_seconds: number
-          ended_at?: string | null
-          id: string
-          kind: string
-          position: number
-          round_id: string
-          session_id: string
-          started_at?: string | null
-          temperature_c_tenths?: number | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          duration_seconds?: number
-          ended_at?: string | null
-          id?: string
-          kind?: string
-          position?: number
-          round_id?: string
-          session_id?: string
-          started_at?: string | null
-          temperature_c_tenths?: number | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "round_parts_round_owner_fk"
-            columns: ["session_id", "round_id", "user_id"]
-            isOneToOne: false
-            referencedRelation: "rounds"
-            referencedColumns: ["session_id", "id", "user_id"]
-          },
-        ]
-      }
-      rounds: {
-        Row: {
-          created_at: string
-          id: string
-          position: number
-          session_id: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id: string
-          position: number
-          session_id: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          position?: number
-          session_id?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "rounds_session_owner_fk"
-            columns: ["session_id", "user_id"]
-            isOneToOne: false
-            referencedRelation: "sessions"
-            referencedColumns: ["id", "user_id"]
-          },
-        ]
       }
       session_intervals: {
         Row: {
@@ -279,7 +197,6 @@ export type Database = {
           rating: number | null
           rest_seconds: number
           revision: number
-          round_count: number
           started_at: string
           timezone_name: string
           updated_at: string
@@ -301,7 +218,6 @@ export type Database = {
           rating?: number | null
           rest_seconds?: number
           revision?: number
-          round_count: number
           started_at: string
           timezone_name: string
           updated_at?: string
@@ -323,7 +239,6 @@ export type Database = {
           rating?: number | null
           rest_seconds?: number
           revision?: number
-          round_count?: number
           started_at?: string
           timezone_name?: string
           updated_at?: string

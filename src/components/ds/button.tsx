@@ -80,7 +80,7 @@ export function Button({
             borderWidth: variant === 'secondary' ? 1 : 0,
             borderColor: v.borderColor,
             width: fullWidth ? '100%' : undefined,
-            opacity: disabled ? 0.4 : 1,
+            opacity: disabled ? 0.5 : 1,
             transform: [{ scale: pressed && !disabled ? 0.98 : 1 }],
           },
           style,
@@ -93,7 +93,7 @@ export function Button({
         ) : (
           <>
             {iconLeft}
-            <Text style={[styles.label, { fontSize: s.fontSize, fontFamily: Rubik[s.weight], color: v.textColor }]}>
+            <Text numberOfLines={1} style={[styles.label, { fontSize: s.fontSize, fontFamily: Rubik[s.weight], color: v.textColor }]}>
               {children}
             </Text>
             {iconRight}
@@ -113,5 +113,6 @@ const styles = StyleSheet.create({
   },
   label: {
     lineHeight: undefined,
+    flexShrink: 1,
   },
 });

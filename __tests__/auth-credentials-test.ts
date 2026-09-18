@@ -3,6 +3,8 @@ import { describe, expect, test } from '@jest/globals';
 import {
   hasPasswordCredentials,
   MIN_PASSWORD_LENGTH,
+  normalizePersonName,
+  validatePersonName,
   validateEmail,
   validateNewAccountCredentials,
   validatePasswordCredentials,
@@ -34,5 +36,21 @@ describe('password authentication input', () => {
     expect(validatePasswordCredentials('person@example.com', '12345', 'signUp')).toEqual({
       password: 'Password must be at least 6 characters.',
     });
+  });
+});
+
+describe('person name input', () => {
+  test('requires a first name and surname and trims them for storage', () => {
+    expect(validatePersonName({ firstName: ' ', lastName: '' })).toEqual({
+      firstName: 'Enter your first name.',
+      lastName: 'Enter your surname.',
+    });
+    expect(normalizePersonName({ firstName: '  Ella ', lastName: 'Thorburn ' }))
+      .toEqual({ firstName: 'Ella', lastName: 'Thorburn' });
+  });
+
+  test('matches the database length limit', () => {
+    expect(validatePersonName({ firstName: 'a'.repeat(81), lastName: 'Lee' }).firstName)
+      .toBe('Keep it under 80 characters.');
   });
 });

@@ -1,57 +1,46 @@
-import { and, eq } from 'drizzle-orm';
-import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Button, Card, Icon, Input, Label, ListRow, Rating, RoundStrip } from '@/components/ds';
-import type { RoundSegment } from '@/components/ds';
+import { Button, Card, Icon, Input, Label, ListRow, Rating, TimelineList, TimelineStrip } from '@/components/ds';
 import { NavBar } from '@/components/nav-bar';
-import { displayText, Rubik, ScreenGutter } from '@/constants/theme';
-import { useAuth } from '@/features/auth/auth-context';
+import { displayText, Rubik, ScreenGutter, Type } from '@/constants/theme';
+import { useDisplayPreferences } from '@/features/profiles/hooks/use-display-preferences';
+import { useSessionTimelineDraft } from '@/features/sessions/hooks/use-session-timeline-draft';
 import {
-  deleteSessionDraft,
-  navigationDraftSchema,
-  type NavigationDraft,
-} from '@/features/sessions/data/session-draft-repository';
-import { saveSession } from '@/features/sessions/data/session-repository';
-import type { Round } from '@/features/sessions/domain/session';
+  describeTimelineRuleError,
+  sessionTimelineDraftService,
+} from '@/features/sessions/services/session-draft-service';
+import { sessionService } from '@/features/sessions/services/session-service';
 import { useTheme } from '@/hooks/use-theme';
-import { describeSessionPart, formatDuration } from '@/lib/format';
+import { formatTotalDuration } from '@/lib/format';
 import { createId } from '@/lib/ids';
 import { singleRouteParam } from '@/lib/route-params';
-import { database } from '@/services/database/client';
-import { sessionDrafts } from '@/services/database/schema';
 
-function totalDuration(rounds: Round[], elapsedSeconds: number) {
-  const activeSeconds = rounds.flatMap((round) => round.parts).reduce((sum, part) => sum + part.durationSeconds, 0);
-  return formatDuration(Math.max(activeSeconds, elapsedSeconds));
-}
-
+/** Review a timeline before it becomes a permanent session. */
 export default function SessionSummaryScreen() {
   const theme = useTheme();
-  const { user } = useAuth();
+  const preferences = useDisplayPreferences();
   const params = useLocalSearchParams<{ draftId?: string | string[] }>();
   const draftId = singleRouteParam(params.draftId);
-  const userId = user?.id ?? '';
-  const { data: rows = [], updatedAt } = useLiveQuery(
-    database.select({ payloadJson: sessionDrafts.payloadJson })
-      .from(sessionDrafts)
-      .where(and(eq(sessionDrafts.id, draftId ?? ''), eq(sessionDrafts.userId, userId)))
-      .limit(1),
-    [draftId, userId],
-  );
-  const draft = useMemo(() => {
-    if (!rows[0]) return null;
-    try {
-      return navigationDraftSchema.parse(JSON.parse(rows[0].payloadJson));
-    } catch {
-      return null;
-    }
-  }, [rows]);
+  const {
+    draft,
+    entries,
+    segments,
+    composition,
+    totals,
+    canSave,
+    isLoaded,
+  } = useSessionTimelineDraft(draftId ?? '', preferences);
 
-  if (!draftId || !user || (updatedAt && !draft)) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [note, setNote] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  if (!draftId || !preferences.userId || (isLoaded && !draft)) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
         <NavBar title="Session" showBack />
@@ -66,45 +55,32 @@ export default function SessionSummaryScreen() {
   }
 
   if (!draft) return null;
-  return <SessionDraftSummary draftId={draftId} draft={draft} />;
-}
 
-function SessionDraftSummary({ draftId, draft }: { draftId: string; draft: NavigationDraft }) {
-  const theme = useTheme();
-  const { profile, user } = useAuth();
-  const [open, setOpen] = useState(Boolean(draft.rating || draft.note));
-  const [rating, setRating] = useState(draft.rating ?? 0);
-  const [note, setNote] = useState(draft.note ?? '');
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const segments = useMemo<RoundSegment[]>(() => draft.rounds.flatMap((round) => round.parts.map((part) => ({
-    type: part.kind,
-    minutes: part.durationSeconds / 60,
-    temp: part.temperatureCTenths === null ? null : part.temperatureCTenths / 10,
-  }))), [draft.rounds]);
+  const deleteEntry = (entryId: string) => {
+    setSaveError(null);
+    try {
+      sessionTimelineDraftService.removeInterval(draftId, preferences.userId, entryId);
+    } catch (error) {
+      setSaveError(describeTimelineRuleError(error) ?? 'Could not remove that entry.');
+    }
+  };
 
   const handleSave = async () => {
-    if (!user) return;
     setIsSaving(true);
     setSaveError(null);
     try {
-      await saveSession({
-        id: createId(),
-        userId: user.id,
-        startedAt: draft.startedAt,
-        elapsedSeconds: draft.elapsedSeconds,
-        venueName: draft.venueName,
+      const sessionId = await sessionService.saveDraft({
+        sessionId: createId(),
+        draftId,
+        userId: preferences.userId,
+        timezoneName: preferences.timeZone,
         rating: rating || null,
         note: note.trim() || null,
-        rounds: draft.rounds,
-        timezoneName: profile?.timezone_name ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
-        entryMethod: draft.entryMethod,
       });
-      deleteSessionDraft(draftId, user.id);
-      router.replace('/');
+      router.replace(`/session/${sessionId}`);
     } catch (error) {
       if (__DEV__) console.error('Session save failed', error);
-      setSaveError('Could not save this session. Try again.');
+      setSaveError(describeTimelineRuleError(error) ?? 'Could not save this session. Try again.');
       setIsSaving(false);
     }
   };
@@ -112,34 +88,58 @@ function SessionDraftSummary({ draftId, draft }: { draftId: string; draft: Navig
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
       <NavBar title="Session" showBack />
-      <ScrollView contentContainerStyle={{ paddingHorizontal: ScreenGutter, paddingBottom: 24 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
-          <Text style={{ fontFamily: Rubik.bold, ...displayText(56), color: theme.text, fontVariant: ['tabular-nums'] }}>
-            {totalDuration(draft.rounds, draft.elapsedSeconds)}
+      <ScrollView contentContainerStyle={{ paddingHorizontal: ScreenGutter, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+        <Label>Total</Label>
+        <Text style={{ marginTop: 4, fontFamily: Rubik.bold, ...displayText(48), color: theme.text, fontVariant: ['tabular-nums'] }}>
+          {formatTotalDuration(totals.elapsedSeconds)}
+        </Text>
+
+        {/* Only what this session contains so far. */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 10 }}>
+          {totals.heatSeconds > 0 ? (
+            <Text style={{ fontFamily: Rubik.medium, fontSize: 15, color: theme.hot }}>Sauna {formatTotalDuration(totals.heatSeconds)}</Text>
+          ) : null}
+          {totals.coldSeconds > 0 ? (
+            <Text style={{ fontFamily: Rubik.medium, fontSize: 15, color: theme.coldInk }}>Plunge {formatTotalDuration(totals.coldSeconds)}</Text>
+          ) : null}
+          {totals.restSeconds > 0 ? (
+            <Text style={{ fontFamily: Rubik.medium, fontSize: 15, color: theme.rest }}>Break {formatTotalDuration(totals.restSeconds)}</Text>
+          ) : null}
+        </View>
+        {totals.untrackedSeconds >= 60 ? (
+          <Text style={{ marginTop: 8, fontFamily: Rubik.regular, fontSize: 13, color: theme.textSecondary }}>
+            +{formatTotalDuration(totals.untrackedSeconds)} not in a logged entry
           </Text>
-          <Text style={{ fontFamily: Rubik.medium, fontSize: 18, color: theme.textSecondary }}>
-            {draft.rounds.length} {draft.rounds.length === 1 ? 'round' : 'rounds'}
-          </Text>
+        ) : null}
+
+        <View style={{ marginTop: 16 }}><TimelineStrip segments={segments} height={48} /></View>
+
+        <View style={{ marginTop: 20 }}>
+          <TimelineList
+            entries={entries}
+            label={composition || 'Session timeline'}
+            editable
+            onEdit={(entryId) => router.push({ pathname: '/log-session', params: { draftId, entryId } })}
+            onDelete={deleteEntry}
+          />
         </View>
 
-        <View style={{ marginTop: 16 }}><RoundStrip segments={segments} height={48} /></View>
-
-        <View style={{ marginTop: 20, gap: 2 }}>
-          {draft.rounds.map((round, index) => (
-            <ListRow
-              key={round.id}
-              title={`Round ${index + 1}`}
-              meta={round.parts.map(describeSessionPart).join(' · ')}
-              leading={<Icon name={round.parts[0].kind === 'heat' ? 'flame' : 'snowflake'} size={20} color={round.parts[0].kind === 'heat' ? theme.hot : theme.cold} />}
-            />
-          ))}
+        <View style={{ marginTop: 16 }}>
+          <Button
+            variant="secondary"
+            fullWidth
+            iconLeft={<Icon name="plus" size={18} color={theme.text} />}
+            onPress={() => router.push({ pathname: '/log-session', params: { draftId } })}>
+            Add another entry
+          </Button>
         </View>
 
         <View style={{ marginTop: 20 }}>
           <Label style={{ marginBottom: 8 }}>Venue</Label>
           <Card padded={false}>
             <ListRow
-              title={draft.venueName ?? 'Venue not set'}
+              title={draft.venueName ?? 'Add a venue'}
+              meta={draft.venueName ? undefined : 'Optional. Without one, the session is named after its day.'}
               leading={<Icon name="map-pin" size={20} color={theme.textSecondary} />}
               chevron
               onPress={() => router.push({ pathname: '/venue-picker', params: { draftId } })}
@@ -148,7 +148,7 @@ function SessionDraftSummary({ draftId, draft }: { draftId: string; draft: Navig
         </View>
 
         <View style={{ marginTop: 16 }}>
-          {open ? (
+          {detailsOpen ? (
             <View style={{ gap: 16 }}>
               <View>
                 <Label style={{ marginBottom: 8 }}>Rating</Label>
@@ -160,16 +160,23 @@ function SessionDraftSummary({ draftId, draft }: { draftId: string; draft: Navig
               </View>
             </View>
           ) : (
-            <Button variant="ghost" fullWidth onPress={() => setOpen(true)} iconLeft={<Icon name="chevron-down" size={18} color={theme.textSecondary} />}>
+            <Button variant="ghost" fullWidth onPress={() => setDetailsOpen(true)} iconLeft={<Icon name="chevron-down" size={18} color={theme.textSecondary} />}>
               Add rating and note
             </Button>
           )}
         </View>
       </ScrollView>
 
-      <View style={{ paddingHorizontal: ScreenGutter, paddingTop: 8, paddingBottom: 28 }}>
-        {saveError ? <Text style={{ fontFamily: Rubik.medium, fontSize: 14, color: theme.cedar, textAlign: 'center', marginBottom: 8 }}>{saveError}</Text> : null}
-        <Button size="lg" fullWidth loading={isSaving} disabled={!user} onPress={() => void handleSave()}>
+      <View style={{ paddingHorizontal: ScreenGutter, paddingTop: 8, paddingBottom: 28, gap: 8 }}>
+        {!canSave ? (
+          <Text accessibilityRole="alert" style={{ fontFamily: Rubik.medium, fontSize: Type.small, lineHeight: Type.small * 1.4, color: theme.cedar }}>
+            Add a sauna or cold plunge before you can save this session.
+          </Text>
+        ) : null}
+        {saveError ? (
+          <Text style={{ fontFamily: Rubik.medium, fontSize: Type.small, color: theme.cedar, textAlign: 'center' }}>{saveError}</Text>
+        ) : null}
+        <Button size="lg" fullWidth loading={isSaving} disabled={!canSave} onPress={() => void handleSave()}>
           Save session
         </Button>
       </View>

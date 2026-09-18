@@ -30,6 +30,7 @@ select public.push_session_aggregate(
   'upsert',
   $json$
   {
+    "schemaVersion": 2,
     "venue": {
       "id": "01PULLVENUE000000000000001",
       "name": "Allas Sea Pool Helsinki Waterfront",
@@ -43,20 +44,14 @@ select public.push_session_aggregate(
       "endedAt": "2026-09-16T08:00:00Z",
       "timezoneName": "Europe/Helsinki",
       "elapsedSeconds": 3600,
-      "heatSeconds": 2700,
-      "coldSeconds": 360,
-      "roundCount": 1,
       "rating": 5,
       "note": "Cold morning.",
       "entryMethod": "manual"
     },
-    "rounds": [{
-      "id": "01PULLROUND000000000000001",
-      "parts": [
-        {"id":"01PULLPART0000000000000001","kind":"heat","durationSeconds":2700,"temperatureCTenths":920},
-        {"id":"01PULLPART0000000000000002","kind":"cold","durationSeconds":360,"temperatureCTenths":110}
-      ]
-    }]
+    "intervals": [
+      {"id":"01PULLINTERVAL0000000001","kind":"heat","durationSeconds":2700,"temperatureCTenths":920},
+      {"id":"01PULLINTERVAL0000000002","kind":"cold","durationSeconds":360,"temperatureCTenths":110}
+    ]
   }
   $json$::jsonb,
   0
@@ -75,15 +70,15 @@ select is(
 );
 
 select is(
-  jsonb_array_length(public.pull_session_changes(0, 50) #> '{changes,0,aggregate,rounds}'),
-  1,
-  'the pull includes rounds'
+  jsonb_array_length(public.pull_session_changes(0, 50) #> '{changes,0,aggregate,intervals}'),
+  2,
+  'the pull includes the ordered timeline'
 );
 
 select is(
-  jsonb_array_length(public.pull_session_changes(0, 50) #> '{changes,0,aggregate,rounds,0,parts}'),
-  2,
-  'the pull includes heat and cold values'
+  public.pull_session_changes(0, 50) #>> '{changes,0,aggregate,intervals,0,kind}',
+  'heat',
+  'the pull returns intervals in timeline order'
 );
 
 select ok(

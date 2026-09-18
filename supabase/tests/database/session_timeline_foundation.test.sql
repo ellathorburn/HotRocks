@@ -1,6 +1,6 @@
 begin;
 
-select plan(7);
+select plan(8);
 
 select has_table('public', 'session_intervals', 'session timeline table exists');
 select has_column('public', 'sessions', 'rest_seconds', 'sessions track recorded break time');
@@ -24,7 +24,7 @@ values
 
 insert into public.sessions (
   id, user_id, started_at, timezone_name, elapsed_seconds,
-  heat_seconds, cold_seconds, rest_seconds, interval_count, round_count
+  heat_seconds, cold_seconds, rest_seconds, interval_count
 )
 values
   (
@@ -32,14 +32,14 @@ values
     '50000000-0000-0000-0000-000000000005',
     '2026-09-17T08:00:00+02:00',
     'Africa/Johannesburg',
-    2280, 1620, 180, 480, 5, 1
+    2280, 1620, 180, 480, 5
   ),
   (
     '01TIMELINESESSION0000000002',
     '60000000-0000-0000-0000-000000000006',
     '2026-09-17T09:00:00+02:00',
     'Africa/Johannesburg',
-    300, 300, 0, 0, 1, 1
+    300, 300, 0, 0, 1
   );
 
 insert into public.session_intervals (
@@ -86,6 +86,22 @@ select throws_ok(
   '23514',
   null,
   'a recorded break cannot carry a temperature'
+);
+
+select throws_ok(
+  $$
+    insert into public.session_intervals (
+      id, user_id, session_id, position, kind, duration_seconds, temperature_c_tenths
+    ) values (
+      '01TIMELINESHORTENTRY000001',
+      '50000000-0000-0000-0000-000000000005',
+      '01TIMELINESESSION0000000001',
+      5, 'cold', 29, 100
+    )
+  $$,
+  '23514',
+  null,
+  'an entry must last at least 30 seconds'
 );
 
 select throws_ok(

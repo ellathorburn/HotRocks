@@ -28,7 +28,7 @@ export default function OnboardingIntroScreen() {
         </Text>
       </View>
       <View style={{ paddingHorizontal: ScreenGutter, paddingBottom: 40, gap: 24, alignItems: 'center' }}>
-        <Button size="lg" fullWidth onPress={() => router.push('/onboarding/round')}>
+        <Button size="lg" fullWidth onPress={() => router.push('/onboarding/timeline')}>
           Continue
         </Button>
         <Dots active={0} />

@@ -1,6 +1,6 @@
 begin;
 
-select plan(8);
+select plan(10);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password,
@@ -31,7 +31,7 @@ select is(
     'upsert',
     $json$
     {
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "venue": {
         "id": "01SYNCVENUE000000000000001",
         "name": "Sea Point Pavilion",
@@ -42,31 +42,18 @@ select is(
         "venueId": "01SYNCVENUE000000000000001",
         "venueNameSnapshot": "Sea Point Pavilion",
         "startedAt": "2026-09-16T06:00:00+02:00",
-        "endedAt": "2026-09-16T06:35:20+02:00",
+        "endedAt": "2026-09-16T06:41:00+02:00",
         "timezoneName": "Africa/Johannesburg",
-        "elapsedSeconds": 2120,
-        "heatSeconds": 1800,
-        "coldSeconds": 320,
-        "roundCount": 2,
+        "elapsedSeconds": 2460,
         "rating": 5,
-        "note": "Two clean rounds before work.",
+        "note": "Sauna, break, sauna, plunge.",
         "entryMethod": "manual"
       },
-      "rounds": [
-        {
-          "id": "01SYNCROUND000000000000001",
-          "parts": [
-            {"id":"01SYNCPART0000000000000001","kind":"heat","durationSeconds":900,"temperatureCTenths":920},
-            {"id":"01SYNCPART0000000000000002","kind":"cold","durationSeconds":160,"temperatureCTenths":110}
-          ]
-        },
-        {
-          "id": "01SYNCROUND000000000000002",
-          "parts": [
-            {"id":"01SYNCPART0000000000000003","kind":"heat","durationSeconds":900,"temperatureCTenths":900},
-            {"id":"01SYNCPART0000000000000004","kind":"cold","durationSeconds":160,"temperatureCTenths":110}
-          ]
-        }
+      "intervals": [
+        {"id":"01SYNCINTERVAL0000000001","kind":"heat","durationSeconds":900,"temperatureCTenths":920},
+        {"id":"01SYNCINTERVAL0000000002","kind":"rest","durationSeconds":300,"temperatureCTenths":null},
+        {"id":"01SYNCINTERVAL0000000003","kind":"heat","durationSeconds":900,"temperatureCTenths":900},
+        {"id":"01SYNCINTERVAL0000000004","kind":"cold","durationSeconds":160,"temperatureCTenths":110}
       ]
     }
     $json$::jsonb,
@@ -83,15 +70,86 @@ select is(
 );
 
 select is(
-  (select count(*) from public.rounds where session_id = '01SYNCSESSION0000000000001'),
-  2::bigint,
-  'the aggregate preserves logical rounds'
+  (
+    select string_agg(kind, ',' order by position)
+    from public.session_intervals
+    where session_id = '01SYNCSESSION0000000000001'
+  ),
+  'heat,rest,heat,cold',
+  'the aggregate preserves the timeline order'
 );
 
 select is(
-  (select count(*) from public.round_parts where session_id = '01SYNCSESSION0000000000001'),
-  4::bigint,
-  'the aggregate preserves every heat and cold entry'
+  (
+    select jsonb_build_object(
+      'heat', heat_seconds, 'cold', cold_seconds,
+      'rest', rest_seconds, 'entries', interval_count
+    )
+    from public.sessions
+    where id = '01SYNCSESSION0000000000001'
+  ),
+  '{"heat": 1800, "cold": 160, "rest": 300, "entries": 4}'::jsonb,
+  'the server derives session totals from the timeline'
+);
+
+select throws_ok(
+  $$
+    select public.push_session_aggregate(
+      '01SYNCREQUESTLEADINGBREAK1',
+      'upsert',
+      $json$
+      {
+        "schemaVersion": 2,
+        "venue": null,
+        "session": {
+          "id": "01SYNCSESSIONBREAKFIRST001",
+          "startedAt": "2026-09-16T06:00:00+02:00",
+          "endedAt": "2026-09-16T06:10:00+02:00",
+          "timezoneName": "Africa/Johannesburg",
+          "elapsedSeconds": 600,
+          "entryMethod": "manual"
+        },
+        "intervals": [
+          {"id":"01SYNCBREAKFIRST00000001","kind":"rest","durationSeconds":300,"temperatureCTenths":null},
+          {"id":"01SYNCBREAKFIRST00000002","kind":"heat","durationSeconds":300,"temperatureCTenths":900}
+        ]
+      }
+      $json$::jsonb,
+      0
+    )
+  $$,
+  '23514',
+  null,
+  'a session cannot start with a break'
+);
+
+select throws_ok(
+  $$
+    select public.push_session_aggregate(
+      '01SYNCREQUESTONLYBREAKS001',
+      'upsert',
+      $json$
+      {
+        "schemaVersion": 2,
+        "venue": null,
+        "session": {
+          "id": "01SYNCSESSIONONLYBREAKS001",
+          "startedAt": "2026-09-16T06:00:00+02:00",
+          "timezoneName": "Africa/Johannesburg",
+          "elapsedSeconds": 600,
+          "entryMethod": "manual"
+        },
+        "intervals": [
+          {"id":"01SYNCONLYBREAK000000001","kind":"rest","durationSeconds":300,"temperatureCTenths":null}
+        ]
+      }
+      $json$::jsonb,
+      0
+    )
+  $$,
+  '23514',
+  null,
+  'a session of only breaks is rejected'
 );
 
 select is(

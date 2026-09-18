@@ -17,7 +17,7 @@ type ListRowProps = {
   style?: ViewStyle;
 };
 
-/** Tappable row: venue lists, settings, rounds in a session. 10px radius. */
+/** Tappable row: venue lists, settings, records. 10px radius. */
 export function ListRow({ title, meta, leading, trailing, chevron = false, selected = false, onPress, style }: ListRowProps) {
   const theme = useTheme();
   const content = (

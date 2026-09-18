@@ -1,19 +1,16 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
-import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Chip, IconButton, Logo, RoundStrip, type RoundSegment } from '@/components/ds';
+import { Chip, IconButton, Logo, TimelineStrip } from '@/components/ds';
 import { displayText, Radius, Rubik, ScreenGutter } from '@/constants/theme';
+import { useDisplayPreferences } from '@/features/profiles/hooks/use-display-preferences';
+import { useShareSession } from '@/features/sessions/hooks/use-session-detail';
 import { ThemeSchemeContext } from '@/hooks/use-theme';
-import { useAuth } from '@/features/auth/auth-context';
-import { formatDuration } from '@/lib/format';
+import { formatTemperature, formatTotalDuration } from '@/lib/format';
 import { singleRouteParam } from '@/lib/route-params';
-import { database } from '@/services/database/client';
-import { roundParts, rounds, sessions } from '@/services/database/schema';
 
 /** The share card is dark-only in the design system, regardless of app theme. */
 export default function ShareCardScreen() {
@@ -26,44 +23,26 @@ export default function ShareCardScreen() {
 }
 
 function ShareCardContent() {
-  const { user } = useAuth();
+  const preferences = useDisplayPreferences();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const id = singleRouteParam(params.id);
-  const userId = user?.id ?? '';
   const [story, setStory] = useState(false);
-  const { data: sessionRows = [], updatedAt } = useLiveQuery(
-    database.select({
-      venue: sessions.venueNameSnapshot,
-      elapsedSeconds: sessions.elapsedSeconds,
-      roundCount: sessions.roundCount,
-      startedAt: sessions.startedAt,
-      heatSeconds: sessions.heatSeconds,
-      coldSeconds: sessions.coldSeconds,
-    }).from(sessions)
-      .where(and(eq(sessions.id, id ?? ''), eq(sessions.userId, userId), isNull(sessions.deletedAt)))
-      .limit(1),
-    [id, userId],
-  );
-  const { data: parts = [] } = useLiveQuery(
-    database.select({
-      kind: roundParts.kind,
-      durationSeconds: roundParts.durationSeconds,
-      temperatureCTenths: roundParts.temperatureCTenths,
-      roundPosition: rounds.position,
-      partPosition: roundParts.position,
-    }).from(roundParts)
-      .innerJoin(rounds, eq(rounds.id, roundParts.roundId))
-      .where(and(eq(roundParts.sessionId, id ?? ''), eq(roundParts.userId, userId)))
-      .orderBy(asc(rounds.position), asc(roundParts.position)),
-    [id, userId],
-  );
-  const session = sessionRows[0];
+  const {
+    session,
+    segments,
+    composition,
+    totals,
+    totalTime,
+    date,
+    title,
+    isLoaded,
+  } = useShareSession(id ?? '', preferences);
 
   if (!session) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#0F0E47' }} edges={['top']}>
         <ShareHeader />
-        {updatedAt ? (
+        {isLoaded ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: ScreenGutter }}>
             <Text style={{ fontFamily: Rubik.medium, color: '#8686AC', textAlign: 'center' }}>
               This session does not exist or does not belong to this account.
@@ -73,18 +52,6 @@ function ShareCardContent() {
       </SafeAreaView>
     );
   }
-
-  const segments: RoundSegment[] = parts.map((part) => ({
-    type: part.kind,
-    minutes: part.durationSeconds / 60,
-    temp: part.temperatureCTenths === null ? null : part.temperatureCTenths / 10,
-  }));
-  const peakHeat = parts
-    .filter((part) => part.kind === 'heat' && part.temperatureCTenths !== null)
-    .reduce<number | null>((peak, part) => Math.max(peak ?? -Infinity, part.temperatureCTenths!), null);
-  const coldestCold = parts
-    .filter((part) => part.kind === 'cold' && part.temperatureCTenths !== null)
-    .reduce<number | null>((coldest, part) => Math.min(coldest ?? Infinity, part.temperatureCTenths!), null);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#0F0E47' }} edges={['top']}>
@@ -96,23 +63,38 @@ function ShareCardContent() {
           boxShadow: '0 0 40px rgba(227,83,54,0.18)' }}>
           <View>
             <Text numberOfLines={1} style={{ fontFamily: Rubik.medium, fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase', color: '#8686AC' }}>
-              {session.venue ?? 'Venue not set'} · {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(session.startedAt))}
+              {title} · {date}
             </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10, marginTop: 8 }}>
-              <Text style={{ fontFamily: Rubik.bold, ...displayText(58), color: '#F5F5DC', fontVariant: ['tabular-nums'] }}>
-                {formatDuration(session.elapsedSeconds)}
-              </Text>
-              <Text style={{ fontFamily: Rubik.regular, fontSize: 16, color: '#8686AC' }}>
-                {session.roundCount} {session.roundCount === 1 ? 'round' : 'rounds'}
-              </Text>
-            </View>
+            <Text style={{ marginTop: 8, fontFamily: Rubik.bold, ...displayText(58), color: '#F5F5DC', fontVariant: ['tabular-nums'] }}>
+              {totalTime}
+            </Text>
+            <Text style={{ marginTop: 4, fontFamily: Rubik.regular, fontSize: 14, color: '#8686AC' }}>
+              {composition}
+            </Text>
           </View>
 
           <View>
-            <RoundStrip segments={segments} height={story ? 40 : 52} />
-            <View style={{ flexDirection: 'row', gap: 14, marginTop: 16 }}>
-              <Metric label="Heat" value={formatDuration(session.heatSeconds)} temperature={peakHeat} color="#E35336" />
-              <Metric label="Cold" value={formatDuration(session.coldSeconds)} temperature={coldestCold} color="#7EA8C4" />
+            <TimelineStrip segments={segments} height={story ? 40 : 52} />
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+              {totals.heatSeconds > 0 ? (
+                <Metric
+                  label="Sauna"
+                  value={formatTotalDuration(totals.heatSeconds)}
+                  temperature={totals.peakHeatCTenths === null ? null : formatTemperature(totals.peakHeatCTenths, preferences.temperatureUnit)}
+                  color="#E35336"
+                />
+              ) : null}
+              {totals.coldSeconds > 0 ? (
+                <Metric
+                  label="Plunge"
+                  value={formatTotalDuration(totals.coldSeconds)}
+                  temperature={totals.coldestColdCTenths === null ? null : formatTemperature(totals.coldestColdCTenths, preferences.temperatureUnit)}
+                  color="#7EA8C4"
+                />
+              ) : null}
+              {totals.restSeconds > 0 ? (
+                <Metric label="Break" value={formatTotalDuration(totals.restSeconds)} temperature={null} color="#9090B3" />
+              ) : null}
             </View>
           </View>
 
@@ -140,15 +122,15 @@ function ShareHeader() {
   );
 }
 
-function Metric({ label, value, temperature, color }: { label: string; value: string; temperature: number | null; color: string }) {
+function Metric({ label, value, temperature, color }: { label: string; value: string; temperature: string | null; color: string }) {
   return (
     <View style={{ flex: 1 }}>
       <Text style={{ fontFamily: Rubik.medium, fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase', color }}>{label}</Text>
-      <Text style={{ fontFamily: Rubik.bold, ...displayText(26), color: '#F5F5DC', fontVariant: ['tabular-nums'] }}>
-        {value}{' '}
-        <Text style={{ fontFamily: Rubik.regular, fontSize: 14, letterSpacing: 0, color: '#8686AC' }}>
-          {temperature === null ? '—' : `${temperature / 10}°C`}
-        </Text>
+      <Text style={{ fontFamily: Rubik.bold, ...displayText(22), color: '#F5F5DC', fontVariant: ['tabular-nums'] }}>
+        {value}
+        {temperature ? (
+          <Text style={{ fontFamily: Rubik.regular, fontSize: 13, letterSpacing: 0, color: '#8686AC' }}> {temperature}</Text>
+        ) : null}
       </Text>
     </View>
   );

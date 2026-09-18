@@ -3,9 +3,8 @@ import { eq } from 'drizzle-orm';
 import { database } from './client';
 import {
   profiles,
-  roundParts,
-  rounds,
   sessionDrafts,
+  sessionIntervals,
   sessionPhotos,
   sessions,
   stravaExports,
@@ -22,8 +21,7 @@ export function purgeLocalAccountData(userId: string): void {
     tx.delete(sessionDrafts).where(eq(sessionDrafts.userId, userId)).run();
     tx.delete(stravaExports).where(eq(stravaExports.userId, userId)).run();
     tx.delete(sessionPhotos).where(eq(sessionPhotos.userId, userId)).run();
-    tx.delete(roundParts).where(eq(roundParts.userId, userId)).run();
-    tx.delete(rounds).where(eq(rounds.userId, userId)).run();
+    tx.delete(sessionIntervals).where(eq(sessionIntervals.userId, userId)).run();
     tx.delete(sessions).where(eq(sessions.userId, userId)).run();
     tx.delete(venues).where(eq(venues.userId, userId)).run();
     tx.delete(profiles).where(eq(profiles.userId, userId)).run();

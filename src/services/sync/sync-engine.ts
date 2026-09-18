@@ -2,7 +2,7 @@ import { and, asc, eq, isNull, lt, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { database } from '@/services/database/client';
-import { roundParts, rounds, sessions, syncOutbox, syncState, venues } from '@/services/database/schema';
+import { sessionIntervals, sessions, syncOutbox, syncState, venues } from '@/services/database/schema';
 import { getSupabaseClient, hasSupabaseEnvironment } from '@/services/supabase/client';
 import type { Json } from '@/services/supabase/database.types';
 
@@ -15,24 +15,16 @@ const payloadEnvelopeSchema = z.object({
   baseRevision: z.number().int().nonnegative().default(0),
 }).passthrough();
 
-const remotePartSchema = z.object({
+const remoteIntervalSchema = z.object({
   id: z.string(),
   position: z.number().int().nonnegative(),
-  kind: z.enum(['heat', 'cold']),
+  kind: z.enum(['heat', 'cold', 'rest']),
   durationSeconds: z.number().int().positive(),
   temperatureCTenths: z.number().int().nullable(),
   startedAt: z.string().nullable(),
   endedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
-});
-
-const remoteRoundSchema = z.object({
-  id: z.string(),
-  position: z.number().int().nonnegative(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  parts: z.array(remotePartSchema),
 });
 
 const remoteAggregateSchema = z.object({
@@ -54,7 +46,8 @@ const remoteAggregateSchema = z.object({
     elapsedSeconds: z.number().int().positive(),
     heatSeconds: z.number().int().nonnegative(),
     coldSeconds: z.number().int().nonnegative(),
-    roundCount: z.number().int().positive(),
+    restSeconds: z.number().int().nonnegative(),
+    intervalCount: z.number().int().nonnegative(),
     rating: z.number().int().nullable(),
     note: z.string().nullable(),
     entryMethod: z.enum(['manual', 'timer', 'repeat']),
@@ -63,8 +56,36 @@ const remoteAggregateSchema = z.object({
     updatedAt: z.string(),
     deletedAt: z.string().nullable(),
   }),
-  rounds: z.array(remoteRoundSchema),
+  intervals: z.array(remoteIntervalSchema),
 });
+
+/** Round-shaped payloads queued by app versions before the timeline cutover. */
+const legacyRoundPayloadSchema = z.object({
+  rounds: z.array(z.object({
+    parts: z.array(z.object({
+      id: z.string(),
+      kind: z.enum(['heat', 'cold']),
+      durationSeconds: z.number().int().positive(),
+      temperatureCTenths: z.number().int().nullable(),
+    })),
+  })),
+}).passthrough();
+
+/** Upgrades a queued version-one upsert so it can still reach the server. */
+export function upgradeLegacySessionPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  if (payload.schemaVersion === 2 || !('rounds' in payload)) return payload;
+  const { rounds, ...rest } = legacyRoundPayloadSchema.parse(payload);
+  return {
+    ...rest,
+    schemaVersion: 2,
+    intervals: rounds.flatMap((round) => round.parts.map((part) => ({
+      id: part.id,
+      kind: part.kind,
+      durationSeconds: part.durationSeconds,
+      temperatureCTenths: part.temperatureCTenths,
+    }))),
+  };
+}
 
 const pullResponseSchema = z.object({
   changes: z.array(z.object({
@@ -148,7 +169,11 @@ async function uploadPendingSessions(userId: string, epoch: number): Promise<voi
       .run();
 
     try {
-      const payload = payloadEnvelopeSchema.parse(JSON.parse(item.payloadJson));
+      const payload = payloadEnvelopeSchema.parse(
+        item.operation === 'upsert'
+          ? upgradeLegacySessionPayload(JSON.parse(item.payloadJson) as Record<string, unknown>)
+          : JSON.parse(item.payloadJson),
+      );
       const { data, error } = await supabase.rpc('push_session_aggregate', {
         p_idempotency_key: item.id,
         p_operation: item.operation,
@@ -285,7 +310,8 @@ function applyRemoteChanges(
         elapsedSeconds: session.elapsedSeconds,
         heatSeconds: session.heatSeconds,
         coldSeconds: session.coldSeconds,
-        roundCount: session.roundCount,
+        restSeconds: session.restSeconds,
+        intervalCount: session.intervalCount,
         rating: session.rating,
         note: session.note,
         entryMethod: session.entryMethod,
@@ -304,7 +330,8 @@ function applyRemoteChanges(
           elapsedSeconds: session.elapsedSeconds,
           heatSeconds: session.heatSeconds,
           coldSeconds: session.coldSeconds,
-          roundCount: session.roundCount,
+          restSeconds: session.restSeconds,
+          intervalCount: session.intervalCount,
           rating: session.rating,
           note: session.note,
           entryMethod: session.entryMethod,
@@ -314,33 +341,23 @@ function applyRemoteChanges(
         },
       }).run();
 
-      tx.delete(rounds).where(and(eq(rounds.sessionId, session.id), eq(rounds.userId, userId))).run();
-      for (const round of aggregate.rounds) {
-        tx.insert(rounds).values({
-          id: round.id,
+      tx.delete(sessionIntervals)
+        .where(and(eq(sessionIntervals.sessionId, session.id), eq(sessionIntervals.userId, userId)))
+        .run();
+      for (const interval of aggregate.intervals) {
+        tx.insert(sessionIntervals).values({
+          id: interval.id,
           userId,
           sessionId: session.id,
-          position: round.position,
-          createdAt: round.createdAt,
-          updatedAt: round.updatedAt,
+          position: interval.position,
+          kind: interval.kind,
+          durationSeconds: interval.durationSeconds,
+          temperatureCTenths: interval.kind === 'rest' ? null : interval.temperatureCTenths,
+          startedAt: interval.startedAt,
+          endedAt: interval.endedAt,
+          createdAt: interval.createdAt,
+          updatedAt: interval.updatedAt,
         }).run();
-
-        for (const part of round.parts) {
-          tx.insert(roundParts).values({
-            id: part.id,
-            userId,
-            sessionId: session.id,
-            roundId: round.id,
-            position: part.position,
-            kind: part.kind,
-            durationSeconds: part.durationSeconds,
-            temperatureCTenths: part.temperatureCTenths,
-            startedAt: part.startedAt,
-            endedAt: part.endedAt,
-            createdAt: part.createdAt,
-            updatedAt: part.updatedAt,
-          }).run();
-        }
       }
       appliedCursor = change.sequence;
     }

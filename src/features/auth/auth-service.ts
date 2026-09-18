@@ -6,7 +6,14 @@ import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
 import { APP_SCHEME, AUTH_CALLBACK_PATH } from '@/config/app';
-import { validateNewAccountCredentials } from '@/features/auth/auth-credentials';
+import {
+  normalizePersonName,
+  type PersonName,
+  validateEmail,
+  validateNewAccountCredentials,
+  validatePassword,
+} from '@/features/auth/auth-credentials';
+import { profileService } from '@/features/profiles/services/profile-service';
 import { purgeLocalAccountData } from '@/services/database/account-data';
 import { getSupabaseClient } from '@/services/supabase/client';
 import { invalidateSyncRuns } from '@/services/sync/sync-engine';
@@ -128,15 +135,12 @@ export async function signInWithApple(): Promise<AuthAttempt> {
     throw error;
   }
 
-  const displayName = credential.fullName
-    ? AppleAuthentication.formatFullName(credential.fullName, 'default').trim()
-    : '';
-
-  if (displayName && data.user) {
-    const { error: metadataError } = await supabase.auth.updateUser({
-      data: { full_name: displayName },
-    });
-    if (metadataError) throw metadataError;
+  // Apple shares the name only on the first authorization, after the account
+  // (and its profile) already exists, so fill in any name the profile lacks.
+  const firstName = credential.fullName?.givenName?.trim() ?? '';
+  const lastName = credential.fullName?.familyName?.trim() ?? '';
+  if (firstName && lastName && data.user) {
+    await profileService.fillMissingName(data.user.id, { firstName, lastName });
   }
 
   return 'authenticated';
@@ -177,17 +181,47 @@ export async function signInWithPassword(
   if (error) throw error;
 }
 
+/**
+ * Creates an email account. The name travels as sign-up metadata so the
+ * database trigger can seed the profile even before the email is confirmed.
+ */
 export async function createAccountWithPassword(
+  name: PersonName,
   email: string,
   password: string,
 ): Promise<'authenticated' | 'confirmationRequired'> {
+  const { firstName, lastName } = normalizePersonName(name);
   validateNewAccountCredentials(email, password);
   const { data, error } = await getSupabaseClient().auth.signUp({
     email: email.trim().toLowerCase(),
     password,
+    options: { data: { first_name: firstName, last_name: lastName } },
   });
   if (error) throw error;
   return data.session ? 'authenticated' : 'confirmationRequired';
+}
+
+/**
+ * Emails a password-reset link. The link returns to the auth callback, where
+ * the code exchange signs the person in and emits PASSWORD_RECOVERY; the
+ * navigator then shows only the new-password screen. The PKCE verifier lives
+ * on this device, so the link must be opened here.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const emailError = validateEmail(email);
+  if (emailError) throw new Error(emailError);
+  const { error } = await getSupabaseClient().auth.resetPasswordForEmail(
+    email.trim().toLowerCase(),
+    { redirectTo: authRedirectUri },
+  );
+  if (error) throw error;
+}
+
+export async function updatePassword(password: string): Promise<void> {
+  const passwordError = validatePassword(password, 'signUp');
+  if (passwordError) throw new Error(passwordError);
+  const { error } = await getSupabaseClient().auth.updateUser({ password });
+  if (error) throw error;
 }
 
 export async function signOut(userId?: string): Promise<void> {

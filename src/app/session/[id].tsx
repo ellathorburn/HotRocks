@@ -1,105 +1,45 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
-import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Alert, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Badge, Button, Icon, IconButton, Label, ListRow, Rating, RoundStrip, StatsStrip, type RoundSegment } from '@/components/ds';
+import { Badge, Button, Card, Icon, IconButton, Label, Rating, StatsStrip, TimelineList, TimelineStrip } from '@/components/ds';
 import { NavBar } from '@/components/nav-bar';
 import { displayText, Rubik, ScreenGutter, Type } from '@/constants/theme';
-import { useAuth } from '@/features/auth/auth-context';
-import { softDeleteSession } from '@/features/sessions/data/session-repository';
+import { useDisplayPreferences } from '@/features/profiles/hooks/use-display-preferences';
+import { useSessionDetail } from '@/features/sessions/hooks/use-session-detail';
+import { sessionService } from '@/features/sessions/services/session-service';
 import { useTheme } from '@/hooks/use-theme';
-import { describeSessionPart, formatDuration } from '@/lib/format';
+import { formatTemperature, formatTotalDuration } from '@/lib/format';
 import { singleRouteParam } from '@/lib/route-params';
-import { database } from '@/services/database/client';
-import { roundParts, rounds, sessions, stravaExports, syncOutbox } from '@/services/database/schema';
-
-type PartRow = {
-  roundId: string;
-  roundPosition: number;
-  partPosition: number;
-  kind: 'heat' | 'cold';
-  durationSeconds: number;
-  temperatureCTenths: number | null;
-};
 
 export default function SessionDetailScreen() {
   const theme = useTheme();
-  const { user } = useAuth();
+  const preferences = useDisplayPreferences();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const id = singleRouteParam(params.id) ?? '';
-  const userId = user?.id ?? '';
-  const { data: sessionRows = [], updatedAt } = useLiveQuery(
-    database.select({
-      id: sessions.id,
-      venueNameSnapshot: sessions.venueNameSnapshot,
-      elapsedSeconds: sessions.elapsedSeconds,
-      heatSeconds: sessions.heatSeconds,
-      coldSeconds: sessions.coldSeconds,
-      roundCount: sessions.roundCount,
-      startedAt: sessions.startedAt,
-      rating: sessions.rating,
-      note: sessions.note,
-    }).from(sessions)
-      .where(and(eq(sessions.id, id), eq(sessions.userId, userId), isNull(sessions.deletedAt)))
-      .limit(1),
-    [id, userId],
-  );
-  const { data: parts = [] } = useLiveQuery(
-    database.select({
-      roundId: roundParts.roundId,
-      roundPosition: rounds.position,
-      partPosition: roundParts.position,
-      kind: roundParts.kind,
-      durationSeconds: roundParts.durationSeconds,
-      temperatureCTenths: roundParts.temperatureCTenths,
-    }).from(roundParts)
-      .innerJoin(rounds, eq(rounds.id, roundParts.roundId))
-      .where(and(eq(roundParts.sessionId, id), eq(roundParts.userId, userId)))
-      .orderBy(asc(rounds.position), asc(roundParts.position)),
-    [id, userId],
-  );
-  const { data: exportRows = [] } = useLiveQuery(
-    database.select({ status: stravaExports.status, stravaActivityId: stravaExports.stravaActivityId })
-      .from(stravaExports)
-      .where(and(eq(stravaExports.sessionId, id), eq(stravaExports.userId, userId)))
-      .limit(1),
-    [id, userId],
-  );
-  const { data: pendingRows = [] } = useLiveQuery(
-    database.select({ id: syncOutbox.id })
-      .from(syncOutbox)
-      .where(and(eq(syncOutbox.userId, userId), eq(syncOutbox.aggregateType, 'session'), eq(syncOutbox.aggregateId, id)))
-      .limit(1),
-    [id, userId],
-  );
-  const session = sessionRows[0];
-  const stravaExport = exportRows[0];
-  const segments: RoundSegment[] = parts.map((part) => ({
-    type: part.kind,
-    minutes: part.durationSeconds / 60,
-    temp: part.temperatureCTenths === null ? null : part.temperatureCTenths / 10,
-  }));
-  const logicalRounds = parts.reduce<PartRow[][]>((groups, part) => {
-    const current = groups.at(-1);
-    if (current?.[0].roundId === part.roundId) current.push(part);
-    else groups.push([part]);
-    return groups;
-  }, []);
-  const peakHeat = parts
-    .filter((part) => part.kind === 'heat' && part.temperatureCTenths !== null)
-    .reduce<number | null>((peak, part) => Math.max(peak ?? -Infinity, part.temperatureCTenths!), null);
+  const {
+    session,
+    stravaExport,
+    segments,
+    entries,
+    composition,
+    totals,
+    totalTime,
+    date,
+    title,
+    isPendingSync,
+    isLoaded,
+  } = useSessionDetail(id, preferences);
 
   const confirmDelete = () => {
-    if (!user || !session) return;
+    if (!preferences.userId || !session) return;
     Alert.alert('Delete session?', 'This removes the session from HotRocks.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => void softDeleteSession(session.id, user.id).then(() => router.back()),
+        onPress: () => void sessionService.delete(session.id, preferences.userId).then(() => router.back()),
       },
     ]);
   };
@@ -108,7 +48,7 @@ export default function SessionDetailScreen() {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
         <NavBar title="Session" showBack />
-        {updatedAt ? (
+        {isLoaded ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: ScreenGutter }}>
             <Text style={{ fontFamily: Rubik.medium, fontSize: Type.body, color: theme.textSecondary }}>Session not found.</Text>
           </View>
@@ -117,47 +57,65 @@ export default function SessionDetailScreen() {
     );
   }
 
-  const venue = session.venueNameSnapshot ?? 'Venue not set';
+  const { peakHeatCTenths, coldestColdCTenths } = totals;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
       <NavBar
-        title={venue}
+        title=""
         showBack
-        trailing={
-          <View style={{ flexDirection: 'row', gap: 2 }}>
-            <IconButton icon="share-2" label="Share" size={38} onPress={() => router.push(`/share/${session.id}`)} />
-          </View>
-        }
+        trailing={<IconButton icon="share-2" label="Share" size={38} onPress={() => router.push(`/share/${session.id}`)} />}
       />
       <ScrollView contentContainerStyle={{ paddingHorizontal: ScreenGutter, paddingBottom: 28 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
-          <Text style={{ fontFamily: Rubik.bold, ...displayText(56), color: theme.text, fontVariant: ['tabular-nums'] }}>
-            {formatDuration(session.elapsedSeconds)}
-          </Text>
-          <Text style={{ fontFamily: Rubik.medium, fontSize: 18, color: theme.textSecondary }}>
-            {session.roundCount} {session.roundCount === 1 ? 'round' : 'rounds'}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
-          <Text style={{ fontFamily: Rubik.regular, fontSize: Type.small, color: theme.textSecondary }}>
-            {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(session.startedAt))}
-          </Text>
+        {/* In the page rather than the nav bar so a long venue name wraps instead of truncating. */}
+        <Text accessibilityRole="header" style={{ fontFamily: Rubik.semibold, fontSize: Type.heading, lineHeight: 29, letterSpacing: -0.24, color: theme.text, marginBottom: 8 }}>
+          {title}
+        </Text>
+        <Text style={{ fontFamily: Rubik.bold, ...displayText(56), color: theme.text, fontVariant: ['tabular-nums'] }}>
+          {totalTime}
+        </Text>
+        <Text style={{ marginTop: 4, fontFamily: Rubik.regular, fontSize: Type.body, color: theme.textSecondary }}>
+          {composition}
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+          <Text style={{ fontFamily: Rubik.regular, fontSize: Type.small, color: theme.textSecondary }}>{date}</Text>
           {session.rating ? <Rating value={session.rating} readOnly size={15} /> : null}
-          {pendingRows.length > 0 ? <Badge icon="cloud-off">On device</Badge> : null}
+          {isPendingSync ? <Badge icon="cloud-off">Saved on device</Badge> : null}
           {stravaExport && stravaExport.status !== 'posted' ? <Badge icon="cloud-off">Waiting for Strava</Badge> : null}
         </View>
 
         <View style={{ marginTop: 18 }}>
-          <RoundStrip segments={segments} height={64} />
+          <TimelineStrip segments={segments} height={64} />
         </View>
 
         <View style={{ marginTop: 20 }}>
+          {/* Only what this session actually contained. */}
           <StatsStrip stats={[
-            { label: 'Time in sauna', value: `${Math.round(session.heatSeconds / 60)} min`, tone: 'hot' },
-            { label: 'Time in plunge', value: `${Math.round(session.coldSeconds / 60)} min`, tone: 'cold' },
-            { label: 'Peak', value: peakHeat === null ? '—' : `${peakHeat / 10}°`, tone: 'hot' },
+            ...(totals.heatSeconds > 0 ? [{ label: 'Sauna', value: formatTotalDuration(totals.heatSeconds), tone: 'hot' as const }] : []),
+            ...(totals.coldSeconds > 0 ? [{ label: 'Plunge', value: formatTotalDuration(totals.coldSeconds), tone: 'cold' as const }] : []),
+            ...(totals.restSeconds > 0 ? [{ label: 'Break', value: formatTotalDuration(totals.restSeconds) }] : []),
           ]} />
         </View>
+
+        {peakHeatCTenths !== null || coldestColdCTenths !== null ? (
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+            {peakHeatCTenths !== null ? (
+              <Card style={{ flex: 1 }}>
+                <Label style={{ marginBottom: 6 }}>Peak sauna</Label>
+                <Text style={{ fontFamily: Rubik.bold, ...displayText(28), color: theme.text, fontVariant: ['tabular-nums'] }}>
+                  {formatTemperature(peakHeatCTenths, preferences.temperatureUnit)}
+                </Text>
+              </Card>
+            ) : null}
+            {coldestColdCTenths !== null ? (
+              <Card style={{ flex: 1 }}>
+                <Label style={{ marginBottom: 6 }}>Coldest plunge</Label>
+                <Text style={{ fontFamily: Rubik.bold, ...displayText(28), color: theme.text, fontVariant: ['tabular-nums'] }}>
+                  {formatTemperature(coldestColdCTenths, preferences.temperatureUnit)}
+                </Text>
+              </Card>
+            ) : null}
+          </View>
+        ) : null}
 
         {session.note ? (
           <Text style={{ marginTop: 20, fontFamily: Rubik.regular, fontSize: Type.body, lineHeight: Type.body * 1.5, color: theme.text }}>
@@ -165,17 +123,8 @@ export default function SessionDetailScreen() {
           </Text>
         ) : null}
 
-        <View style={{ marginTop: 20, gap: 2 }}>
-          <Label style={{ marginBottom: 6 }}>Rounds</Label>
-          {logicalRounds.map((round, index) => (
-            <ListRow
-              key={round[0].roundId}
-              title={`Round ${index + 1}`}
-              meta={round.map(describeSessionPart).join(' · ')}
-              leading={<Icon name={round[0].kind === 'heat' ? 'flame' : 'snowflake'} size={20} color={round[0].kind === 'heat' ? theme.hot : theme.cold} />}
-              chevron
-            />
-          ))}
+        <View style={{ marginTop: 20 }}>
+          <TimelineList entries={entries} />
         </View>
 
         <View style={{ marginTop: 20, gap: 10 }}>

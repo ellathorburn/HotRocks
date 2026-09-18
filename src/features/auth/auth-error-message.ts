@@ -1,6 +1,6 @@
 import { isAuthApiError } from '@supabase/supabase-js';
 
-export type AuthAction = 'signIn' | 'signUp' | 'social';
+export type AuthAction = 'signIn' | 'signUp' | 'social' | 'passwordReset';
 
 const ERROR_MESSAGES: Record<string, string> = {
   email_address_invalid: 'Enter a valid email address.',
@@ -32,6 +32,9 @@ export function getAuthErrorMessage(error: unknown, action: AuthAction): string 
 
   if (action === 'signUp') {
     return 'Account creation could not be completed. Try again.';
+  }
+  if (action === 'passwordReset') {
+    return 'The password could not be reset. Try again.';
   }
   if (action === 'social') {
     return 'This sign-in method could not be completed. Try again.';

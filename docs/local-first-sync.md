@@ -11,7 +11,7 @@
 
 ## Local tables
 
-`sessions`, `rounds`, `round_parts` and `venues` are queryable domain data.
+`sessions`, `session_intervals` and `venues` are queryable domain data.
 `sync_outbox` contains durable commands. Its unique key on user, aggregate type
 and aggregate ID coalesces repeated offline edits into the latest intended state.
 `sync_state` holds the future server cursor and sync diagnostics.
@@ -30,8 +30,12 @@ Outbox states:
 called with the user’s Supabase access token. The function runs as security
 invoker so normal RLS remains active.
 
-For `upsert`, payload version 1 contains the optional venue, session and ordered
-rounds with their heat/cold parts. For `delete`, it contains the session ID and
+For `upsert`, payload version 2 contains the optional venue, the session and its
+ordered `intervals` (heat, cold or rest). The server derives the session's
+heat, cold and rest totals and interval count from the intervals, and rejects a
+timeline with no heat or cold interval or one that starts with a break. Queued
+version-1 (round-shaped) upserts from older builds are converted to version 2 by
+the client before upload. For `delete`, the payload contains the session ID and
 deletion timestamp. A new local aggregate has base revision 0. Each accepted
 server mutation increments revision.
 

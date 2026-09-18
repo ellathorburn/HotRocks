@@ -2,9 +2,18 @@ export const MIN_PASSWORD_LENGTH = 6;
 
 export type PasswordAuthMode = 'signIn' | 'signUp';
 
+export const MAX_NAME_LENGTH = 80;
+
 export type AuthFieldErrors = {
+  firstName?: string;
+  lastName?: string;
   email?: string;
   password?: string;
+};
+
+export type PersonName = {
+  firstName: string;
+  lastName: string;
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -49,6 +58,41 @@ export function validatePasswordCredentials(
     ...(emailError ? { email: emailError } : {}),
     ...(passwordError ? { password: passwordError } : {}),
   };
+}
+
+export function validateName(value: string, field: 'first' | 'last'): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return field === 'first' ? 'Enter your first name.' : 'Enter your surname.';
+  }
+  if (trimmed.length > MAX_NAME_LENGTH) {
+    return `Keep it under ${MAX_NAME_LENGTH} characters.`;
+  }
+  return undefined;
+}
+
+export function validatePersonName(name: PersonName): AuthFieldErrors {
+  const firstName = validateName(name.firstName, 'first');
+  const lastName = validateName(name.lastName, 'last');
+  return {
+    ...(firstName ? { firstName } : {}),
+    ...(lastName ? { lastName } : {}),
+  };
+}
+
+export function validateSignUp(name: PersonName, email: string, password: string): AuthFieldErrors {
+  return {
+    ...validatePersonName(name),
+    ...validatePasswordCredentials(email, password, 'signUp'),
+  };
+}
+
+/** Trimmed names ready to store. Throws the first validation message. */
+export function normalizePersonName(name: PersonName): PersonName {
+  const errors = validatePersonName(name);
+  const firstError = errors.firstName ?? errors.lastName;
+  if (firstError) throw new Error(firstError);
+  return { firstName: name.firstName.trim(), lastName: name.lastName.trim() };
 }
 
 export function validateNewAccountCredentials(email: string, password: string): void {

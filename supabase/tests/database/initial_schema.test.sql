@@ -1,12 +1,13 @@
 begin;
 
-select plan(26);
+select plan(27);
 
 select has_table('public', 'profiles', 'profiles table exists');
 select has_table('public', 'venues', 'venues table exists');
 select has_table('public', 'sessions', 'sessions table exists');
-select has_table('public', 'rounds', 'rounds table exists');
-select has_table('public', 'round_parts', 'round_parts table exists');
+select has_table('public', 'session_intervals', 'session timeline table exists');
+select hasnt_table('public', 'rounds', 'the legacy rounds table is removed');
+select hasnt_table('public', 'round_parts', 'the legacy round_parts table is removed');
 select has_table('public', 'session_photos', 'session photos table exists');
 select has_table('public', 'strava_exports', 'Strava export status table exists');
 select has_table('private', 'strava_connections', 'Strava credentials are private');
@@ -14,14 +15,14 @@ select hasnt_table('public', 'strava_connections', 'Strava credentials are not p
 
 select col_type_is(
   'public',
-  'round_parts',
+  'session_intervals',
   'duration_seconds',
   'integer',
   'durations use integer seconds'
 );
 select col_type_is(
   'public',
-  'round_parts',
+  'session_intervals',
   'temperature_c_tenths',
   'smallint',
   'temperatures use integer tenths Celsius'
@@ -77,7 +78,7 @@ insert into public.sessions (
   elapsed_seconds,
   heat_seconds,
   cold_seconds,
-  round_count
+  interval_count
 )
 values
   (
@@ -165,7 +166,7 @@ select throws_ok(
   $$
     insert into public.sessions (
       id, user_id, started_at, timezone_name, elapsed_seconds,
-      heat_seconds, cold_seconds, round_count
+      heat_seconds, cold_seconds, interval_count
     ) values (
       '01INVALIDELAPSED0000000001',
       '10000000-0000-0000-0000-000000000001',
@@ -186,7 +187,7 @@ select throws_ok(
   $$
     insert into public.sessions (
       id, user_id, started_at, timezone_name, elapsed_seconds,
-      round_count, rating
+      interval_count, rating
     ) values (
       '01INVALIDRATING0000000002',
       '10000000-0000-0000-0000-000000000001',
@@ -202,23 +203,14 @@ select throws_ok(
   'rating cannot exceed five'
 );
 
-insert into public.rounds (id, user_id, session_id, position)
-values (
-  '01HOTROCKSROUND000000000001',
-  '10000000-0000-0000-0000-000000000001',
-  '01HOTROCKSSESSION0000000001',
-  0
-);
-
-insert into public.round_parts (
-  id, user_id, session_id, round_id, position, kind,
+insert into public.session_intervals (
+  id, user_id, session_id, position, kind,
   duration_seconds, temperature_c_tenths
 )
 values (
-  '01HOTROCKSPART0000000000001',
+  '01HOTROCKSINTERVAL000000001',
   '10000000-0000-0000-0000-000000000001',
   '01HOTROCKSSESSION0000000001',
-  '01HOTROCKSROUND000000000001',
   0,
   'heat',
   900,
@@ -228,8 +220,8 @@ values (
 select is(
   (
     select temperature_c_tenths
-    from public.round_parts
-    where id = '01HOTROCKSPART0000000000001'
+    from public.session_intervals
+    where id = '01HOTROCKSINTERVAL000000001'
   ),
   920::smallint,
   'a realistic 92 Celsius temperature is stored exactly'
@@ -237,23 +229,22 @@ select is(
 
 select throws_ok(
   $$
-    insert into public.round_parts (
-      id, user_id, session_id, round_id, position, kind,
+    insert into public.session_intervals (
+      id, user_id, session_id, position, kind,
       duration_seconds, temperature_c_tenths
     ) values (
-      '01DUPLICATEKIND00000000001',
+      '01DUPLICATEPOSITION0000001',
       '10000000-0000-0000-0000-000000000001',
       '01HOTROCKSSESSION0000000001',
-      '01HOTROCKSROUND000000000001',
-      1,
-      'heat',
+      0,
+      'cold',
       120,
-      900
+      110
     )
   $$,
   '23505',
   null,
-  'a round cannot contain two heat parts'
+  'two timeline entries cannot share a position'
 );
 
 select is(
@@ -291,7 +282,7 @@ select is(
 
 insert into public.sessions (
   id, user_id, venue_name_snapshot, started_at, timezone_name,
-  elapsed_seconds, heat_seconds, cold_seconds, round_count
+  elapsed_seconds, heat_seconds, cold_seconds, interval_count
 )
 values
   (
@@ -317,23 +308,14 @@ values
     6
   );
 
-insert into public.rounds (id, user_id, session_id, position)
-values (
-  '01HOTROCKSCOLDROUND0000001',
-  '10000000-0000-0000-0000-000000000001',
-  '01HOTROCKSCOLDONLY0000001',
-  0
-);
-
-insert into public.round_parts (
-  id, user_id, session_id, round_id, position, kind,
+insert into public.session_intervals (
+  id, user_id, session_id, position, kind,
   duration_seconds, temperature_c_tenths
 )
 values (
-  '01HOTROCKSCOLDPART00000001',
+  '01HOTROCKSCOLDINTERVAL0001',
   '10000000-0000-0000-0000-000000000001',
   '01HOTROCKSCOLDONLY0000001',
-  '01HOTROCKSCOLDROUND0000001',
   0,
   'cold',
   580,
@@ -343,41 +325,31 @@ values (
 select is(
   (
     select count(*)
-    from public.round_parts
+    from public.session_intervals
     where session_id = '01HOTROCKSCOLDONLY0000001' and kind = 'cold'
   ),
   1::bigint,
-  'a session can contain one cold-only round'
+  'a session can contain a single cold plunge'
 );
 
-insert into public.rounds (id, user_id, session_id, position)
-select
-  '01HOTROCKSSIXROUND' || lpad(position::text, 7, '0'),
-  '10000000-0000-0000-0000-000000000001',
-  '01HOTROCKSSIXROUNDS000001',
-  position
-from generate_series(0, 5) as position;
-
-insert into public.round_parts (
-  id, user_id, session_id, round_id, position, kind,
+insert into public.session_intervals (
+  id, user_id, session_id, position, kind,
   duration_seconds, temperature_c_tenths
 )
 select
-  '01HOTROCKSSIXPART' || lpad((round_position * 2 + part_position)::text, 8, '0'),
+  '01HOTROCKSSIXINTERVAL' || lpad(position::text, 5, '0'),
   '10000000-0000-0000-0000-000000000001',
   '01HOTROCKSSIXROUNDS000001',
-  '01HOTROCKSSIXROUND' || lpad(round_position::text, 7, '0'),
-  part_position,
-  case when part_position = 0 then 'heat' else 'cold' end,
-  case when part_position = 0 then 600 else 120 end,
-  case when part_position = 0 then 920 else 110 end
-from generate_series(0, 5) as round_position
-cross join generate_series(0, 1) as part_position;
+  position,
+  case when position % 2 = 0 then 'heat' else 'cold' end,
+  case when position % 2 = 0 then 600 else 120 end,
+  case when position % 2 = 0 then 920 else 110 end
+from generate_series(0, 11) as position;
 
 select is(
-  (select count(*) from public.rounds where session_id = '01HOTROCKSSIXROUNDS000001'),
-  6::bigint,
-  'a six-round session preserves all six logical rounds'
+  (select count(*) from public.session_intervals where session_id = '01HOTROCKSSIXROUNDS000001'),
+  12::bigint,
+  'a long session preserves every timeline entry in order'
 );
 
 select * from finish();
