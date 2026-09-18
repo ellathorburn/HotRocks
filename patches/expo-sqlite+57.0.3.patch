@@ -1,0 +1,13 @@
+diff --git a/node_modules/expo-sqlite/build/SQLiteDevToolsClient.js b/node_modules/expo-sqlite/build/SQLiteDevToolsClient.js
+index 17bee2b..006f000 100644
+--- a/node_modules/expo-sqlite/build/SQLiteDevToolsClient.js
++++ b/node_modules/expo-sqlite/build/SQLiteDevToolsClient.js
+@@ -6,7 +6,7 @@ let client = null;
+ const lock = new AwaitLock();
+ const registeredDatabases = new Map();
+ export async function registerDatabaseForDevToolsAsync(database) {
+-    if (!__DEV__) {
++    if (!__DEV__ || typeof window === 'undefined') {
+         return;
+     }
+     await maybeInitClientAsync();

@@ -32,3 +32,6 @@ begin
   return new;
 end;
 $$;
+
+-- Ask PostgREST to refresh its schema cache immediately after deployment.
+notify pgrst, 'reload schema';
