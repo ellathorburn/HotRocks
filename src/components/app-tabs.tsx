@@ -1,5 +1,5 @@
 import { TabList, TabSlot, Tabs, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/ds';
@@ -14,27 +14,34 @@ import { useTheme } from '@/hooks/use-theme';
 export default function AppTabs() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
 
   return (
     <Tabs style={styles.root}>
       <TabSlot style={styles.slot} />
+      {/* Tabs only finds triggers that are direct children of the TabList's
+          child, so the width cap is side padding rather than an inner View. */}
       <TabList asChild>
         <View
-          style={[
-            styles.barWrap,
-            { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: insets.bottom },
-          ]}>
-          <View style={styles.bar}>
-            <TabTrigger name="sessions" href="/" asChild>
-              <TabButton icon="list">Sessions</TabButton>
-            </TabTrigger>
-            <TabTrigger name="timer" href="/timer" asChild>
-              <TabButton icon="timer">Timer</TabButton>
-            </TabTrigger>
-            <TabTrigger name="profile" href="/profile" asChild>
-              <TabButton icon="user">You</TabButton>
-            </TabTrigger>
-          </View>
+          // asChild merges props through expo-router's Slot, which rejects style arrays.
+          style={StyleSheet.flatten([
+            styles.bar,
+            {
+              borderTopColor: theme.border,
+              backgroundColor: theme.background,
+              paddingBottom: insets.bottom,
+              paddingHorizontal: Math.max(0, (width - MaxContentWidth) / 2),
+            },
+          ])}>
+          <TabTrigger name="sessions" href="/" asChild>
+            <TabButton icon="list">Sessions</TabButton>
+          </TabTrigger>
+          <TabTrigger name="timer" href="/timer" asChild>
+            <TabButton icon="timer">Timer</TabButton>
+          </TabTrigger>
+          <TabTrigger name="profile" href="/profile" asChild>
+            <TabButton icon="user">You</TabButton>
+          </TabTrigger>
         </View>
       </TabList>
     </Tabs>
@@ -65,13 +72,7 @@ function TabButton({ children, icon, isFocused, ...props }: TabTriggerSlotProps 
 const styles = StyleSheet.create({
   root: { flex: 1 },
   slot: { flex: 1 },
-  barWrap: { borderTopWidth: 1 },
-  bar: {
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    marginHorizontal: 'auto',
-    flexDirection: 'row',
-  },
+  bar: { borderTopWidth: 1, flexDirection: 'row' },
   tab: {
     flex: 1,
     alignItems: 'center',
