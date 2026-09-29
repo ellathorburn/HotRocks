@@ -6,7 +6,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Card, Icon, Input, Label, ListRow, Rating, TimelineList, TimelineStrip } from '@/components/ds';
 import { NavBar } from '@/components/nav-bar';
 import { displayText, Rubik, ScreenGutter, Type } from '@/constants/theme';
-import { useDisplayPreferences } from '@/features/profiles/hooks/use-display-preferences';
+import {
+  useDisplayPreferences,
+  type DisplayPreferences,
+} from '@/features/profiles/hooks/use-display-preferences';
 import { useSessionTimelineDraft } from '@/features/sessions/hooks/use-session-timeline-draft';
 import {
   describeTimelineRuleError,
@@ -18,27 +21,18 @@ import { formatTotalDuration } from '@/lib/format';
 import { createId } from '@/lib/ids';
 import { singleRouteParam } from '@/lib/route-params';
 
-/** Review a timeline before it becomes a permanent session. */
+/**
+ * Reviews a timeline before it becomes a permanent session, or before an edit
+ * of one is written back. A draft that carries `editingSessionId` rewrites that
+ * session; leaving this screen without saving keeps the saved session as it was.
+ */
 export default function SessionSummaryScreen() {
   const theme = useTheme();
   const preferences = useDisplayPreferences();
   const params = useLocalSearchParams<{ draftId?: string | string[] }>();
   const draftId = singleRouteParam(params.draftId);
-  const {
-    draft,
-    entries,
-    segments,
-    composition,
-    totals,
-    canSave,
-    isLoaded,
-  } = useSessionTimelineDraft(draftId ?? '', preferences);
-
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [rating, setRating] = useState(0);
-  const [note, setNote] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const timeline = useSessionTimelineDraft(draftId ?? '', preferences);
+  const { draft, isLoaded } = timeline;
 
   if (!draftId || !preferences.userId || (isLoaded && !draft)) {
     return (
@@ -56,10 +50,47 @@ export default function SessionSummaryScreen() {
 
   if (!draft) return null;
 
+  // The rating and note belong to the draft, so the form is mounted with them
+  // rather than updating state from an effect once the draft loads.
+  return (
+    <SummaryForm
+      key={draftId}
+      draftId={draftId}
+      userId={preferences.userId}
+      preferences={preferences}
+      timeline={timeline}
+    />
+  );
+}
+
+type SummaryFormProps = {
+  draftId: string;
+  userId: string;
+  preferences: DisplayPreferences;
+  timeline: ReturnType<typeof useSessionTimelineDraft>;
+};
+
+function SummaryForm({ draftId, userId, preferences, timeline }: SummaryFormProps) {
+  const theme = useTheme();
+  const { draft, entries, segments, composition, totals, canSave } = timeline;
+  const editingSessionId = draft?.editingSessionId ?? null;
+  const isEdit = editingSessionId !== null;
+
+  const [rating, setRating] = useState(draft?.rating ?? 0);
+  const [note, setNote] = useState(draft?.note ?? '');
+  // An edit arrives with details already filled in, so they start visible.
+  const [detailsOpen, setDetailsOpen] = useState(
+    isEdit && Boolean(draft?.rating || draft?.note),
+  );
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  if (!draft) return null;
+
   const deleteEntry = (entryId: string) => {
     setSaveError(null);
     try {
-      sessionTimelineDraftService.removeInterval(draftId, preferences.userId, entryId);
+      sessionTimelineDraftService.removeInterval(draftId, userId, entryId);
     } catch (error) {
       setSaveError(describeTimelineRuleError(error) ?? 'Could not remove that entry.');
     }
@@ -70,9 +101,9 @@ export default function SessionSummaryScreen() {
     setSaveError(null);
     try {
       const sessionId = await sessionService.saveDraft({
-        sessionId: createId(),
+        sessionId: editingSessionId ?? createId(),
         draftId,
-        userId: preferences.userId,
+        userId,
         timezoneName: preferences.timeZone,
         rating: rating || null,
         note: note.trim() || null,
@@ -80,14 +111,27 @@ export default function SessionSummaryScreen() {
       router.replace(`/session/${sessionId}`);
     } catch (error) {
       if (__DEV__) console.error('Session save failed', error);
-      setSaveError(describeTimelineRuleError(error) ?? 'Could not save this session. Try again.');
+      setSaveError(
+        describeTimelineRuleError(error)
+          ?? (isEdit
+            ? 'Could not save your changes. Try again.'
+            : 'Could not save this session. Try again.'),
+      );
       setIsSaving(false);
+    }
+  };
+
+  const discardEdit = () => {
+    try {
+      sessionTimelineDraftService.delete(draftId, userId);
+    } finally {
+      router.replace(`/session/${editingSessionId}`);
     }
   };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
-      <NavBar title="Session" showBack />
+      <NavBar title={isEdit ? 'Edit session' : 'Session'} showBack />
       <ScrollView contentContainerStyle={{ paddingHorizontal: ScreenGutter, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
         <Label>Total</Label>
         <Text style={{ marginTop: 4, fontFamily: Rubik.bold, ...displayText(48), color: theme.text, fontVariant: ['tabular-nums'] }}>
@@ -161,7 +205,7 @@ export default function SessionSummaryScreen() {
             </View>
           ) : (
             <Button variant="ghost" fullWidth onPress={() => setDetailsOpen(true)} iconLeft={<Icon name="chevron-down" size={18} color={theme.textSecondary} />}>
-              Add rating and note
+              {isEdit ? 'Edit rating and note' : 'Add rating and note'}
             </Button>
           )}
         </View>
@@ -177,8 +221,13 @@ export default function SessionSummaryScreen() {
           <Text style={{ fontFamily: Rubik.medium, fontSize: Type.small, color: theme.cedar, textAlign: 'center' }}>{saveError}</Text>
         ) : null}
         <Button size="lg" fullWidth loading={isSaving} disabled={!canSave} onPress={() => void handleSave()}>
-          Save session
+          {isEdit ? 'Save changes' : 'Save session'}
         </Button>
+        {isEdit ? (
+          <Button size="sm" variant="ghost" fullWidth disabled={isSaving} onPress={discardEdit}>
+            Discard changes
+          </Button>
+        ) : null}
       </View>
     </SafeAreaView>
   );

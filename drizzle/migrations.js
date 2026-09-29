@@ -5,6 +5,7 @@ import m0001 from './20260916080849_polite_nightcrawler/migration.sql';
 import m0002 from './20260917085443_plain_cannonball/migration.sql';
 import m0003 from './20260917162743_timeline_cutover/migration.sql';
 import m0004 from './20260918115003_interval_min_duration/migration.sql';
+import m0005 from './20260929075256_outbox_conflict_revision/migration.sql';
 
   export default {
     journal: {
@@ -39,6 +40,12 @@ import m0004 from './20260918115003_interval_min_duration/migration.sql';
           tag: '20260918115003_interval_min_duration',
           breakpoints: true,
         },
+        {
+          idx: 5,
+          when: 1790668376000,
+          tag: '20260929075256_outbox_conflict_revision',
+          breakpoints: true,
+        },
       ],
     },
     migrations: {
@@ -46,7 +53,7 @@ import m0004 from './20260918115003_interval_min_duration/migration.sql';
 "20260916080849_polite_nightcrawler": m0001,
 "20260917085443_plain_cannonball": m0002,
 "20260917162743_timeline_cutover": m0003,
-"20260918115003_interval_min_duration": m0004
+"20260918115003_interval_min_duration": m0004,
+"20260929075256_outbox_conflict_revision": m0005
 }
   }
-  

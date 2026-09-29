@@ -1,0 +1,1 @@
+ALTER TABLE `sync_outbox` ADD `conflict_server_revision` integer;

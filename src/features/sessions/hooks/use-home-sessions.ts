@@ -51,9 +51,26 @@ export function useHomeSessions({ userId, timeZone, temperatureUnit }: DisplayPr
     ? { id: sessions[0].id, title: formatSessionTitle(sessions[0].venue, sessions[0].startedAt, timeZone) }
     : null;
 
-  // One status for the feed instead of a badge on every card.
-  const unsyncedCount = sessions.filter((session) =>
-    pending.some((item) => item.aggregateId === session.id)).length;
+  // One status for the feed instead of a badge on every card. A conflict is
+  // counted apart from an ordinary offline save: it needs a decision, and it
+  // blocks every incoming change until it gets one.
+  const queuedFor = (sessionId: string) =>
+    pending.find((item) => item.aggregateId === sessionId) ?? null;
+  const unsyncedCount = sessions.filter((session) => {
+    const queued = queuedFor(session.id);
+    return queued !== null && queued.status !== 'action_required';
+  }).length;
+  const conflictedSessions = sessions.filter(
+    (session) => queuedFor(session.id)?.status === 'action_required',
+  );
 
-  return { cards, week, lastSession, unsyncedCount, isLoaded: Boolean(updatedAt) };
+  return {
+    cards,
+    week,
+    lastSession,
+    unsyncedCount,
+    conflictCount: conflictedSessions.length,
+    firstConflictId: conflictedSessions[0]?.id ?? null,
+    isLoaded: Boolean(updatedAt),
+  };
 }

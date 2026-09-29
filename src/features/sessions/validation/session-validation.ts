@@ -87,5 +87,11 @@ export const timelineNavigationDraftSchema = timelineFieldsSchema
   .extend({
     schemaVersion: z.literal(2),
     entryMethod: z.enum(['manual', 'timer', 'repeat']),
+    /**
+     * Set when this draft edits an already-saved session rather than building a
+     * new one. Absent in drafts queued by builds before editing existed, so it
+     * defaults rather than being required.
+     */
+    editingSessionId: z.string().min(1).nullable().default(null),
   })
   .superRefine(rejectLeadingBreak);

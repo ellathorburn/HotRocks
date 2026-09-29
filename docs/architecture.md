@@ -98,6 +98,13 @@ An interrupted request can therefore be repeated without creating duplicate
 intervals. Transient failures use capped exponential backoff. Revision conflicts
 become `action_required` rather than silently overwriting another device.
 
+Editing a saved session follows the same path. It reuses the draft screens, then
+rewrites the session, its whole interval order, the venue and the queued command
+in one SQLite transaction. The session keeps its ID, start time and creation
+time, and the queued command carries the revision the device believes the server
+holds, so a concurrent edit elsewhere is still detected rather than clobbered.
+The server replaces the timeline wholesale, so no interval diff is sent.
+
 ## Read path
 
 Local SQLite drives every session screen. The server records a monotonic
@@ -108,7 +115,11 @@ each page in a local transaction. The cursor advances only with that commit.
 If a remote change targets an aggregate with a local outbox operation, pulling
 stops before that change. The next upload either succeeds from the known base
 revision or becomes `action_required`; remote data is never silently placed over
-an offline edit.
+an offline edit. Because an `action_required` command also blocks the pull, a
+conflict halts incoming changes for the whole account until the owner chooses a
+version. Conflicts are therefore surfaced in the app — on the session and on the
+feed — and resolved through `resolveSessionConflict`. See
+[Local-first sync protocol](./local-first-sync.md).
 
 ## Account isolation
 

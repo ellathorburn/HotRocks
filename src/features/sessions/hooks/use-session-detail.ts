@@ -33,6 +33,7 @@ export function useSessionDetail(sessionId: string, preferences: DisplayPreferen
   );
 
   const session = sessions[0] ?? null;
+  const queued = pending[0] ?? null;
   const derived = useMemo(() => {
     const totals = calculateIntervalTotals(intervals, session?.elapsedSeconds ?? 0);
     return {
@@ -49,7 +50,10 @@ export function useSessionDetail(sessionId: string, preferences: DisplayPreferen
   return {
     session,
     stravaExport: exports[0] ?? null,
-    isPendingSync: pending.length > 0,
+    /** Waiting to upload. A conflicted session is reported separately, not as pending. */
+    isPendingSync: queued !== null && queued.status !== 'action_required',
+    /** The server refused this session's queued command; only the owner can settle it. */
+    needsSyncAttention: queued?.status === 'action_required',
     isLoaded: Boolean(updatedAt),
     ...derived,
   };

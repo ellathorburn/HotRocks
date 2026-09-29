@@ -27,8 +27,8 @@ for copyable read/write examples and import rules.
 | SQLite table types | `src/services/database/schema.ts` | Drizzle table declarations and inferred local row types |
 | Supabase row types | `src/services/supabase/database.types.ts` | Generated remote types; never edit this file by hand |
 | Supabase schema and security | `supabase/migrations/` | Tables, database functions, constraints, and RLS policies |
-| Offline/cloud synchronization | `src/services/sync/sync-engine.ts` | Pushes queued commands and pulls remote changes |
-| Authentication operations | `src/features/auth/auth-service.ts` | Sign-in, sign-up, OAuth, OTP, sign-out, and account deletion |
+| Offline/cloud synchronization | `src/services/sync/sync-engine.ts` | Pushes queued commands, pulls remote changes, and settles revision conflicts via `resolveSessionConflict` |
+| Authentication operations | `src/features/auth/auth-service.ts` | Sign-in, sign-up, OAuth, email code (OTP), sign-out, and account deletion |
 | Authentication state | `src/features/auth/auth-context.tsx` | Current session/user state; profile work is delegated to `profileService` |
 | Screens and routes | `src/app/` | UI and navigation only |
 
@@ -39,14 +39,19 @@ Permanent sessions:
 ```ts
 await sessionService.save(input);          // a complete SessionTimeline
 await sessionService.saveDraft(input);     // save a draft and consume it atomically
+await sessionService.update(input);        // rewrite a saved session in place
 await sessionService.delete(sessionId, userId);
 ```
+
+`saveDraft` routes to `update` when the draft carries `editingSessionId`, so a
+screen saves an edit and a new session through the same call.
 
 Timeline drafts:
 
 ```ts
 sessionTimelineDraftService.create(userId, input);
 sessionTimelineDraftService.createRepeat(userId, sessionId);
+sessionTimelineDraftService.createEdit(userId, sessionId);
 sessionTimelineDraftService.get(draftId, userId);
 sessionTimelineDraftService.setVenue(draftId, userId, venueName);
 sessionTimelineDraftService.addInterval(draftId, userId, interval);

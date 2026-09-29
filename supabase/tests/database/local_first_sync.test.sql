@@ -1,6 +1,6 @@
 begin;
 
-select plan(10);
+select plan(13);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password,
@@ -176,6 +176,72 @@ select is(
   'a stale base revision is rejected explicitly'
 );
 
+-- An edit made in the app is an upsert at the revision the device already
+-- holds. It must replace the whole timeline rather than add to it.
+select is(
+  public.push_session_aggregate(
+    '01SYNCREQUESTEDIT000000001',
+    'upsert',
+    $json$
+    {
+      "schemaVersion": 2,
+      "venue": {
+        "id": "01SYNCVENUE000000000000001",
+        "name": "Sea Point Pavilion",
+        "lastUsedAt": "2026-09-16T06:30:00+02:00"
+      },
+      "session": {
+        "id": "01SYNCSESSION0000000000001",
+        "venueId": "01SYNCVENUE000000000000001",
+        "venueNameSnapshot": "Sea Point Pavilion",
+        "startedAt": "2026-09-16T06:00:00+02:00",
+        "endedAt": "2026-09-16T06:25:00+02:00",
+        "timezoneName": "Africa/Johannesburg",
+        "elapsedSeconds": 1500,
+        "rating": 4,
+        "note": "Trimmed to one sauna and a longer plunge.",
+        "entryMethod": "manual"
+      },
+      "intervals": [
+        {"id":"01SYNCINTERVAL0000000001","kind":"heat","durationSeconds":1200,"temperatureCTenths":950},
+        {"id":"01SYNCINTERVAL0000000005","kind":"cold","durationSeconds":200,"temperatureCTenths":105}
+      ]
+    }
+    $json$::jsonb,
+    1
+  ),
+  jsonb_build_object(
+    'status', 'applied',
+    'sessionId', '01SYNCSESSION0000000000001',
+    'revision', 2
+  ),
+  'an edit at the known revision is applied and advances the revision'
+);
+
+select is(
+  (
+    select string_agg(id || ':' || kind, ',' order by position)
+    from public.session_intervals
+    where session_id = '01SYNCSESSION0000000000001'
+  ),
+  '01SYNCINTERVAL0000000001:heat,01SYNCINTERVAL0000000005:cold',
+  'an edit replaces the whole timeline instead of leaving removed entries behind'
+);
+
+select is(
+  (
+    select jsonb_build_object(
+      'heat', heat_seconds, 'cold', cold_seconds,
+      'rest', rest_seconds, 'entries', interval_count,
+      'rating', rating
+    )
+    from public.sessions
+    where id = '01SYNCSESSION0000000000001'
+  ),
+  '{"heat": 1200, "cold": 200, "rest": 0, "entries": 2, "rating": 4}'::jsonb,
+  'the server re-derives totals from the edited timeline'
+);
+
 select is(
   public.push_session_aggregate(
     '01SYNCREQUESTDELETE0000001',
@@ -184,7 +250,7 @@ select is(
       'sessionId', '01SYNCSESSION0000000000001',
       'deletedAt', '2026-09-16T07:00:00+02:00'
     ),
-    1
+    2
   ) ->> 'status',
   'deleted',
   'a matching revision creates a synchronized tombstone'
@@ -192,8 +258,8 @@ select is(
 
 select is(
   (select count(*) from public.sync_changes where aggregate_id = '01SYNCSESSION0000000000001'),
-  2::bigint,
-  'create and delete each append one ordered change event'
+  3::bigint,
+  'create, edit and delete each append one ordered change event'
 );
 
 select * from finish();

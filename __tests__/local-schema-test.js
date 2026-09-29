@@ -142,4 +142,31 @@ describe('local session persistence schema', () => {
     expect(database.prepare('SELECT count(*) AS count FROM session_drafts').get().count).toBe(0);
     database.close();
   });
+
+  test('adds the conflict revision to an outbox that already holds queued work', () => {
+    const database = openDatabase();
+    const conflictIndex = migrationFiles.findIndex((file) => file.includes('outbox_conflict_revision'));
+    expect(conflictIndex).toBeGreaterThan(-1);
+    migrate(database, migrationFiles.slice(0, conflictIndex));
+    const now = '2026-09-29T08:00:00.000Z';
+
+    database.prepare(`INSERT INTO sync_outbox (
+      id, user_id, aggregate_type, aggregate_id, operation, payload_json,
+      status, attempt_count, next_attempt_at, last_error, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run('outbox-queued', 'user-1', 'session', 'session-1', 'upsert', '{"baseRevision":2}', 'action_required', 3, null, 'Revision conflict', now, now);
+
+    migrate(database, migrationFiles.slice(conflictIndex));
+
+    // An upgrade must keep queued commands, and a command conflicted before the
+    // column existed simply has no recorded server revision.
+    const row = database.prepare('SELECT * FROM sync_outbox WHERE id = ?').get('outbox-queued');
+    expect(row).toMatchObject({ status: 'action_required', attempt_count: 3 });
+    expect(row.conflict_server_revision).toBeNull();
+
+    database.prepare('UPDATE sync_outbox SET conflict_server_revision = 9 WHERE id = ?').run('outbox-queued');
+    expect(database.prepare('SELECT conflict_server_revision FROM sync_outbox WHERE id = ?').get('outbox-queued'))
+      .toMatchObject({ conflict_server_revision: 9 });
+    database.close();
+  });
 });

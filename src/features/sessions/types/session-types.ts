@@ -14,6 +14,11 @@ export type SessionInterval = z.infer<typeof sessionIntervalSchema>;
 export type SessionTimelineDraft = z.infer<typeof sessionTimelineDraftSchema>;
 export type SessionTimeline = z.infer<typeof sessionTimelineSchema>;
 export type TimelineNavigationDraft = z.infer<typeof timelineNavigationDraftSchema>;
+/**
+ * What a caller may pass when creating a draft. Fields the schema defaults,
+ * such as `editingSessionId`, are optional here but always present once parsed.
+ */
+export type TimelineNavigationDraftInput = z.input<typeof timelineNavigationDraftSchema>;
 export type SessionEntryMethod = TimelineNavigationDraft['entryMethod'];
 
 /**

@@ -130,13 +130,22 @@ weekly streak, heatmap data, and formatted records.
 ```tsx
 const {
   session, segments, entries, composition, totals,
-  totalTime, date, stravaExport, isPendingSync, isLoaded,
+  totalTime, date, stravaExport,
+  isPendingSync, needsSyncAttention, isLoaded,
 } = useSessionDetail(sessionId, preferences);
 ```
 
 `useShareSession` returns the same view model. `session` is `null` while
 loading and when no owned, non-deleted session exists. Only show a "not found"
 state after `isLoaded` is true.
+
+The two sync flags are mutually exclusive and mean different things.
+`isPendingSync` is an ordinary offline save that will upload by itself; show it
+quietly ("Saved on device") and offer no action. `needsSyncAttention` means the
+server refused this session's queued command because it changed on another
+device too. That stops the pull for the whole account, so it is not quiet: show
+it, explain that nothing else syncs until it is settled, and offer the two
+resolutions described in [Resolve a sync conflict](#resolve-a-sync-conflict).
 
 ### Timeline draft
 
@@ -192,6 +201,30 @@ const handleSave = async () => {
 sync-outbox command, and deletes the draft, all in one local transaction. It
 does not wait for the network. Do not call the sync engine separately.
 
+### Edit a saved session
+
+Editing reuses the draft screens rather than a separate editor. Open an edit
+draft, let the user change it with the same draft API as a new session, then
+save it with `saveDraft`:
+
+```tsx
+const draftId = sessionTimelineDraftService.createEdit(preferences.userId, session.id);
+router.push({ pathname: '/session/summary', params: { draftId } });
+```
+
+The draft carries `editingSessionId`, and `saveDraft` uses it to rewrite that
+session instead of creating another one: the session keeps its ID, start time,
+creation time and place in the feed. Read `draft.editingSessionId` to decide
+between edit and create wording, and seed a rating or note input from
+`draft.rating` and `draft.note` when the form mounts.
+
+Abandoning an edit leaves the saved session untouched, so delete the draft when
+the user discards it. Saving an edit of a session deleted in the meantime
+rejects with "Session to edit no longer exists" rather than resurrecting it.
+
+`sessionService.update` is the same operation without a draft, for a caller that
+already holds a complete timeline.
+
 ### Delete a saved session
 
 ```tsx
@@ -199,6 +232,22 @@ await sessionService.delete(sessionId, preferences.userId);
 ```
 
 This is an offline-safe soft delete. The service queues the cloud tombstone.
+
+### Resolve a sync conflict
+
+When `needsSyncAttention` is true, the owner picks which version survives.
+There is no automatic answer, because either outcome discards real work:
+
+```tsx
+await resolveSessionConflict(preferences.userId, session.id, 'keep-local');
+// or
+await resolveSessionConflict(preferences.userId, session.id, 'use-remote');
+```
+
+`keep-local` retries the upload against the revision the server actually holds,
+so this device's version wins. `use-remote` discards this device's edit and lets
+the next successful pull bring the other version down. Either way the pull
+unblocks, so state the consequence plainly before the user chooses.
 
 ## Editing drafts
 

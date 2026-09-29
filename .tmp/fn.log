@@ -1,0 +1,11 @@
+Setting up Edge Functions runtime...
+2026-09-29T09:02:24.399676349Z Serving functions on http://127.0.0.1:54321/functions/v1/<function-name>
+2026-09-29T09:02:24.399729021Z  - http://127.0.0.1:54321/functions/v1/delete-account
+2026-09-29T09:02:24.399732145Z  - http://127.0.0.1:54321/functions/v1/post-to-strava
+2026-09-29T09:02:24.399733849Z Using supabase-edge-runtime-1.74.3 (compatible with Deno v2.1.4)
+2026-09-29T09:02:35.616594878Z serving the request with supabase/functions/post-to-strava
+2026-09-29T09:02:36.231887429Z serving the request with supabase/functions/post-to-strava
+2026-09-29T09:02:36.285828971Z serving the request with supabase/functions/post-to-strava
+2026-09-29T09:02:54.541574227Z serving the request with supabase/functions/post-to-strava
+2026-09-29T09:05:54.750754901Z wall clock duration warning: isolate: 6d8bd030-b529-4a51-a4e1-2e944236bc24
+2026-09-29T09:05:54.765887510Z early termination has been triggered: isolate: 6d8bd030-b529-4a51-a4e1-2e944236bc24

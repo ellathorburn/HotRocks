@@ -1,11 +1,13 @@
 import { isAuthApiError } from '@supabase/supabase-js';
 
-export type AuthAction = 'signIn' | 'signUp' | 'social' | 'passwordReset';
+export type AuthAction = 'signIn' | 'signUp' | 'social' | 'passwordReset' | 'emailCodeRequest' | 'emailCodeVerify';
 
 const ERROR_MESSAGES: Record<string, string> = {
   email_address_invalid: 'Enter a valid email address.',
   email_not_confirmed: 'Confirm your email before signing in.',
   invalid_credentials: 'Email or password is incorrect.',
+  otp_disabled: 'Signing in with a code is currently unavailable.',
+  otp_expired: 'That code has expired. Request a new one.',
   over_email_send_rate_limit: 'Too many emails were requested. Wait a moment and try again.',
   over_request_rate_limit: 'Too many attempts. Wait a moment and try again.',
   provider_disabled: 'This sign-in method is currently unavailable.',
@@ -38,6 +40,14 @@ export function getAuthErrorMessage(error: unknown, action: AuthAction): string 
   }
   if (action === 'social') {
     return 'This sign-in method could not be completed. Try again.';
+  }
+  if (action === 'emailCodeRequest') {
+    return 'The code could not be sent. Check the address and try again.';
+  }
+  // Supabase documents no distinct code for a wrong token, so a rejected
+  // verification covers both an incorrect and an already-used code.
+  if (action === 'emailCodeVerify') {
+    return 'That code is incorrect or has expired. Request a new one.';
   }
   return 'Sign in could not be completed. Try again.';
 }

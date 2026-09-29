@@ -159,7 +159,7 @@ site_url = "hotrocks://auth/callback"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["hotrocks://auth/callback", "http://127.0.0.1:8081/auth/callback"]
+additional_redirect_urls = ["hotrocks://auth/callback", "http://127.0.0.1:8081/auth/callback", "https://hotrocks.app/auth/callback"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -232,15 +232,22 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# Use a production-ready SMTP server
+# Local development sends to Mailpit/Inbucket (see [local_smtp] above), so no
+# SMTP block is needed here. The hosted project is configured in the dashboard
+# under Authentication > Emails > SMTP Settings, using a verified sender on
+# hotrocks.app. Keep the API key out of this file and out of the repo; it is a
+# secret, not an EXPO_PUBLIC_ value.
+#
+# If this project later adopts `supabase config push`, uncomment and set the
+# key through an environment variable rather than inline:
 # [auth.email.smtp]
 # enabled = true
-# host = "smtp.sendgrid.net"
+# host = "smtp.resend.com"
 # port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# user = "resend"
+# pass = "env(SMTP_PASSWORD)"
+# admin_email = "hello@hotrocks.app"
+# sender_name = "HotRocks"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]
@@ -432,3 +439,9 @@ entrypoint = "./functions/delete-account/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/delete-account/*.html" ]
+
+[functions.post-to-strava]
+enabled = true
+verify_jwt = true
+import_map = "./functions/post-to-strava/deno.json"
+entrypoint = "./functions/post-to-strava/index.ts"

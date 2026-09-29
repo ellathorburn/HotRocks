@@ -1,14 +1,25 @@
 import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Badge, Button, Card, Icon, IconButton, Label, Rating, StatsStrip, TimelineList, TimelineStrip } from '@/components/ds';
+import { Badge, Button, Card, Icon, IconButton, Label, Rating, Sheet, StatsStrip, TimelineList, TimelineStrip } from '@/components/ds';
 import { NavBar } from '@/components/nav-bar';
 import { displayText, Rubik, ScreenGutter, Type } from '@/constants/theme';
 import { useDisplayPreferences } from '@/features/profiles/hooks/use-display-preferences';
 import { useSessionDetail } from '@/features/sessions/hooks/use-session-detail';
+import { sessionTimelineDraftService } from '@/features/sessions/services/session-draft-service';
 import { sessionService } from '@/features/sessions/services/session-service';
+import {
+  StravaPostError,
+  stravaExportService,
+  stravaPostMessages,
+} from '@/features/strava/services/strava-export-service';
+import {
+  resolveSessionConflict,
+  type SessionConflictResolution,
+} from '@/services/sync/sync-engine';
 import { useTheme } from '@/hooks/use-theme';
 import { formatTemperature, formatTotalDuration } from '@/lib/format';
 import { singleRouteParam } from '@/lib/route-params';
@@ -29,8 +40,13 @@ export default function SessionDetailScreen() {
     date,
     title,
     isPendingSync,
+    needsSyncAttention,
     isLoaded,
   } = useSessionDetail(id, preferences);
+  const [conflictOpen, setConflictOpen] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const confirmDelete = () => {
     if (!preferences.userId || !session) return;
@@ -42,6 +58,54 @@ export default function SessionDetailScreen() {
         onPress: () => void sessionService.delete(session.id, preferences.userId).then(() => router.back()),
       },
     ]);
+  };
+
+  const startEdit = () => {
+    if (!preferences.userId || !session) return;
+    setActionError(null);
+    try {
+      const draftId = sessionTimelineDraftService.createEdit(preferences.userId, session.id);
+      router.push({ pathname: '/session/summary', params: { draftId } });
+    } catch (error) {
+      if (__DEV__) console.error('Starting a session edit failed', error);
+      setActionError('Could not open this session for editing.');
+    }
+  };
+
+  const postToStrava = async () => {
+    if (!preferences.userId || !session) return;
+    setIsPosting(true);
+    setActionError(null);
+    try {
+      await stravaExportService.post({
+        sessionId: session.id,
+        userId: preferences.userId,
+        venueName: session.venue,
+        totals,
+        note: session.note,
+        temperatureUnit: preferences.temperatureUnit,
+      });
+    } catch (error) {
+      if (__DEV__) console.error('Posting to Strava failed', error);
+      setActionError(error instanceof StravaPostError ? error.message : stravaPostMessages.unknown);
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
+  const resolveConflict = async (resolution: SessionConflictResolution) => {
+    if (!preferences.userId || !session) return;
+    setIsResolving(true);
+    setActionError(null);
+    try {
+      await resolveSessionConflict(preferences.userId, session.id, resolution);
+      setConflictOpen(false);
+    } catch (error) {
+      if (__DEV__) console.error('Resolving a sync conflict failed', error);
+      setActionError('Could not reach the server. Your choice is saved and will be retried.');
+    } finally {
+      setIsResolving(false);
+    }
   };
 
   if (!session) {
@@ -80,8 +144,23 @@ export default function SessionDetailScreen() {
           <Text style={{ fontFamily: Rubik.regular, fontSize: Type.small, color: theme.textSecondary }}>{date}</Text>
           {session.rating ? <Rating value={session.rating} readOnly size={15} /> : null}
           {isPendingSync ? <Badge icon="cloud-off">Saved on device</Badge> : null}
+          {needsSyncAttention ? <Badge tone="hot" icon="alert-triangle">Needs your choice</Badge> : null}
           {stravaExport && stravaExport.status !== 'posted' ? <Badge icon="cloud-off">Waiting for Strava</Badge> : null}
         </View>
+
+        {needsSyncAttention ? (
+          <Card style={{ marginTop: 16 }}>
+            <Label style={{ marginBottom: 6 }}>Sync stopped</Label>
+            <Text style={{ fontFamily: Rubik.regular, fontSize: Type.small, lineHeight: Type.small * 1.5, color: theme.textSecondary }}>
+              This session changed on another device too, so HotRocks stopped
+              rather than overwrite either version. Nothing else syncs until you
+              choose which one to keep.
+            </Text>
+            <Button variant="secondary" fullWidth style={{ marginTop: 12 }} onPress={() => setConflictOpen(true)}>
+              Choose a version
+            </Button>
+          </Card>
+        ) : null}
 
         <View style={{ marginTop: 18 }}>
           <TimelineStrip segments={segments} height={64} />
@@ -136,12 +215,58 @@ export default function SessionDetailScreen() {
               onPress={() => void Linking.openURL(`https://www.strava.com/activities/${stravaExport.stravaActivityId}`)}>
               View on Strava
             </Button>
-          ) : null}
+          ) : (
+            <Button
+              variant="secondary"
+              fullWidth
+              loading={isPosting}
+              disabled={needsSyncAttention}
+              iconLeft={<Icon name="link" size={18} color={theme.text} />}
+              onPress={() => void postToStrava()}>
+              {stravaExport?.status === 'action_required' ? 'Try Strava again' : 'Post to Strava'}
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            fullWidth
+            iconLeft={<Icon name="pencil" size={18} color={theme.text} />}
+            onPress={startEdit}>
+            Edit session
+          </Button>
           <Button variant="ghost" fullWidth onPress={confirmDelete}>
             Delete session
           </Button>
+          {actionError ? (
+            <Text accessibilityRole="alert" style={{ fontFamily: Rubik.medium, fontSize: Type.small, color: theme.cedar, textAlign: 'center' }}>
+              {actionError}
+            </Text>
+          ) : null}
         </View>
       </ScrollView>
+
+      <Sheet
+        open={conflictOpen}
+        title="Which version should HotRocks keep?"
+        onDismiss={() => setConflictOpen(false)}>
+        <View>
+          <Text style={{ fontFamily: Rubik.regular, fontSize: Type.body, lineHeight: Type.body * 1.5, color: theme.textSecondary, marginBottom: 18 }}>
+            Both versions cannot be kept. Whichever you do not choose is lost.
+          </Text>
+          <View style={{ gap: 10 }}>
+            <Button size="lg" fullWidth loading={isResolving} onPress={() => void resolveConflict('keep-local')}>
+              Keep this device&rsquo;s version
+            </Button>
+            <Button size="lg" variant="secondary" fullWidth disabled={isResolving} onPress={() => void resolveConflict('use-remote')}>
+              Use the other device&rsquo;s version
+            </Button>
+          </View>
+          <Text style={{ marginTop: 14, fontFamily: Rubik.regular, fontSize: 13, lineHeight: 18, color: theme.textSecondary }}>
+            Keeping this device&rsquo;s version uploads what you see here. Using the
+            other device&rsquo;s version discards these details and downloads that
+            version instead.
+          </Text>
+        </View>
+      </Sheet>
     </SafeAreaView>
   );
 }

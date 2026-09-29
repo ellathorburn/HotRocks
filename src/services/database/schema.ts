@@ -140,6 +140,12 @@ export const syncOutbox = sqliteTable('sync_outbox', {
   attemptCount: integer('attempt_count').notNull().default(0),
   nextAttemptAt: text('next_attempt_at'),
   lastError: text('last_error'),
+  /**
+   * Revision the server held when it refused this command. Resolving the
+   * conflict in favour of the local edit rebases the payload onto it, so it
+   * must survive an app restart rather than live in `lastError` text.
+   */
+  conflictServerRevision: integer('conflict_server_revision'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => [

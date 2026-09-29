@@ -15,8 +15,14 @@ The UI can call the functions exported by
   `createAccountWithPassword({ firstName, lastName }, email, password)`
   provide a development fallback that needs no SMTP when email confirmation is
   disabled in the Supabase project.
-- `requestEmailOtp(email)` and `verifyEmailOtp(email, code)` remain ready for
-  the six-digit production fallback once custom SMTP is configured.
+- `requestEmailOtp(email)` and `verifyEmailOtp(email, code)` back the
+  six-digit code sign-in on `/email-code`, reached from Sign in with "Email me
+  a code instead". The screen asks for an address, sends a code, then verifies
+  it; the address is locked while a code is outstanding so a code is always
+  checked against the address it went to. Verifying creates the session and the
+  root navigator routes onward, so the screen never navigates on success. Until
+  custom SMTP is configured on the hosted project, codes only arrive locally in
+  Mailpit.
 - `signOut(userId)` ends the Supabase session and purges that account's local
   SQLite data.
 - `deleteAccount(userId)` invokes the authenticated server function, removes
@@ -26,7 +32,8 @@ The UI can call the functions exported by
 profile-update and `updateName` state. The root navigator uses Expo Router
 protected routes to admit only the routes valid for the current state:
 
-1. Signed out: `/sign-in` (returning users) and `/sign-up` (new accounts).
+1. Signed out: `/sign-in` (returning users), `/sign-up` (new accounts),
+   `/email-code` (six-digit code) and `/forgot-password`.
 2. Signed in without a name: `/complete-profile`.
 3. Named but not onboarded: onboarding.
 4. Otherwise: the app.
@@ -81,9 +88,18 @@ copy its Project URL and publishable key. The URL has the form
 7. Replace both hosted Confirmation and Magic Link email templates with the
    committed OTP wording and include `{{ .Token }}`.
 8. Configure production SMTP before launch; the built-in sender is for limited
-   testing only.
-9. Deploy `delete-account` with user authentication enabled and verify it in
-   the target hosted project.
+   testing only. The domain is `hotrocks.app`. Add it to the sending provider,
+   publish the SPF and DKIM records it asks for, verify it, then set
+   Authentication > Emails > SMTP Settings to that provider with a sender on
+   `hotrocks.app`. The SMTP password is a secret: keep it in the dashboard, not
+   in `config.toml`, `.env` or any `EXPO_PUBLIC_` variable. Raise
+   `auth.rate_limit.email_sent` from its local value of 2 per hour once a real
+   sender is in place, and keep it below the provider's own daily cap.
+9. Add `https://hotrocks.app/auth/callback` to the redirect allow-list
+   alongside `hotrocks://auth/callback` if the web build is ever hosted there.
+   Native sign-in does not need it.
+10. Deploy `delete-account` with user authentication enabled and verify it in
+    the target hosted project.
 
 Google and Apple cannot complete end-to-end locally until their provider
 credentials and final app identifiers exist. Email OTP can be exercised
@@ -99,3 +115,8 @@ OTP interface after custom SMTP is configured.
 
 This setup needs neither a purchased domain nor a hosted website. Native OAuth
 returns to `hotrocks://auth/callback`; password login stays inside the app.
+
+A domain is still required before launch, but for reasons other than OAuth:
+a verified sending domain for production SMTP, the privacy policy and support
+URLs both app stores require, and the production Authorization Callback Domain
+for Strava. `hotrocks.app` covers all three.

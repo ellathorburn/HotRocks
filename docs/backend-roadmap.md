@@ -7,7 +7,7 @@
 - [x] Keep anonymous sign-in disabled.
 - [x] Add aggregate revisions, idempotency receipts and change cursor log.
 - [x] Add the atomic `push_session_aggregate` RPC.
-- [x] Pass 32 local database tests and database lint.
+- [x] Pass 60 local database tests and database lint.
 - [x] Link and deploy migrations to the hosted Supabase project.
 
 ## 2. Account boundary
@@ -15,10 +15,12 @@
 - [x] Add the SDK 57-compatible Supabase client and secure native auth storage.
 - [x] Require authentication before onboarding.
 - [x] Add Apple, Google PKCE and email OTP sign-in.
+- [x] Expose the six-digit email code sign-in screen.
 - [x] Add account deletion and sign-out flows.
 - [x] Deploy the JWT-protected account-deletion Edge Function.
-- [ ] Configure hosted provider credentials, URLs and production SMTP.
-- [ ] Purge device data after account deletion.
+- [ ] Configure hosted provider credentials, URLs and production SMTP
+      (needs the hotrocks.app domain and a verified sender).
+- [x] Purge device data after account deletion.
 
 ## 3. Expo Go local-first database
 
@@ -28,7 +30,8 @@
 - [x] Add idempotent upload, revisions, conflict stop and retry backoff.
 - [x] Trigger upload after save, at launch, on foreground and while active.
 - [x] Show unsynced sessions quietly as “On device”.
-- [ ] Add atomic session editing.
+- [x] Add atomic session editing.
+- [x] Surface revision conflicts and let the owner resolve them.
 - [x] Implement cursor-based server pull and tombstones.
 - [ ] Prove save/edit/delete after process restart in airplane mode.
 - [ ] Add two-device conflict tests.

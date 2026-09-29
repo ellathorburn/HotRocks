@@ -19,6 +19,7 @@ type InputProps = {
   | 'autoComplete'
   | 'editable'
   | 'inputMode'
+  | 'maxLength'
   | 'onBlur'
   | 'onSubmitEditing'
   | 'returnKeyType'

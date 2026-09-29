@@ -1,5 +1,8 @@
 export const MIN_PASSWORD_LENGTH = 6;
 
+/** Digits in an emailed sign-in code. Must match `auth.email.otp_length`. */
+export const EMAIL_CODE_LENGTH = 6;
+
 export type PasswordAuthMode = 'signIn' | 'signUp';
 
 export const MAX_NAME_LENGTH = 80;
@@ -9,6 +12,7 @@ export type AuthFieldErrors = {
   lastName?: string;
   email?: string;
   password?: string;
+  code?: string;
 };
 
 export type PersonName = {
@@ -29,6 +33,21 @@ export function validateEmail(email: string): string | undefined {
   }
   if (!EMAIL_PATTERN.test(normalizedEmail)) {
     return 'Enter a valid email address.';
+  }
+  return undefined;
+}
+
+/** Checks an emailed sign-in code before spending a verification attempt on it. */
+export function validateEmailCode(code: string): string | undefined {
+  const digits = code.trim();
+  if (!digits) {
+    return 'Enter the code from your email.';
+  }
+  if (!/^[0-9]+$/.test(digits)) {
+    return 'The code is digits only.';
+  }
+  if (digits.length !== EMAIL_CODE_LENGTH) {
+    return `The code is ${EMAIL_CODE_LENGTH} digits.`;
   }
   return undefined;
 }

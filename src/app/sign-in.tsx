@@ -131,6 +131,15 @@ export default function SignInScreen() {
             ) : null}
           </View>
 
+          <Button
+            variant="secondary"
+            size="lg"
+            fullWidth
+            disabled={isSubmitting}
+            onPress={() => router.push('/email-code')}>
+            Email me a code instead
+          </Button>
+
           <Card style={{ gap: 12 }}>
             <Text style={{ fontFamily: Rubik.semibold, fontSize: Type.subheading, color: theme.text }}>New to HotRocks?</Text>
             <Button variant="secondary" size="lg" fullWidth disabled={isSubmitting} onPress={() => router.push('/sign-up')}>

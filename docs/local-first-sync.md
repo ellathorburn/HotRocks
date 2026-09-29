@@ -22,7 +22,7 @@ Outbox states:
 | --- | --- |
 | `pending` | Eligible after `next_attempt_at` |
 | `uploading` | Claimed by the current process; stale claims recover after two minutes |
-| `action_required` | Server revision conflict; automatic overwrite is stopped |
+| `action_required` | Server revision conflict; automatic overwrite is stopped, and `conflict_server_revision` records the revision the server held |
 
 ## Push request
 
@@ -58,6 +58,32 @@ trigger. Pull does the following:
 The cursor advances only with the corresponding local changes. This prevents a
 crash from skipping server data.
 
+Step 3 refuses on any queued command, including one parked as
+`action_required`. A conflict therefore stops the pull at that sequence for the
+whole account, not just for the conflicted session, and it stays stopped until
+the conflict is resolved. That is deliberate — the alternative is overwriting an
+offline edit — but it means a conflict must be surfaced to the user rather than
+logged, and must always have a way out.
+
+## Conflict resolution
+
+A revision conflict cannot be settled automatically: both outcomes discard
+somebody's work, so the owner chooses. `resolveSessionConflict(userId,
+sessionId, resolution)` applies that choice and resumes synchronization.
+
+| Resolution | Effect |
+| --- | --- |
+| `keep-local` | Rebases the queued command onto `conflict_server_revision` and requeues it as `pending`. The retry overwrites the other device's version. |
+| `use-remote` | Deletes the queued command, discarding this device's edit. The pull unblocks and the server's version replaces the local rows on the next successful pull. |
+
+`keep-local` reuses the original outbox ID, which is also the idempotency key.
+That is safe because a conflict returns before the RPC stores a receipt, so the
+key is still unused and the retry is processed fresh.
+
+A conflict is also cleared by editing the session again: the new command
+replaces the parked one, resets the attempt count and clears
+`conflict_server_revision`.
+
 ## Failure behavior
 
 | Failure | Result |
@@ -72,7 +98,9 @@ crash from skipping server data.
 
 ## Production gates
 
-- Add two-device conflict and cursor crash-recovery tests.
+- Add two-device conflict and cursor crash-recovery tests against real devices.
+  `__tests__/sync-conflict-test.js` covers resolution against local SQLite, not
+  two devices racing a live server.
 - Purge local rows during account deletion.
 - Add network-reconnect triggering if 30-second foreground retries prove too
   slow; avoid making connectivity detection a correctness dependency.

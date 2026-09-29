@@ -188,6 +188,7 @@ async function uploadPendingSessions(userId: string, epoch: number): Promise<voi
         database.update(syncOutbox)
           .set({
             status: 'action_required',
+            conflictServerRevision: response.serverRevision,
             lastError: `Revision conflict (server ${response.serverRevision ?? 'missing'})`,
           })
           .where(and(eq(syncOutbox.id, item.id), eq(syncOutbox.updatedAt, item.updatedAt)))
@@ -216,6 +217,7 @@ async function uploadPendingSessions(userId: string, epoch: number): Promise<voi
           attemptCount: 0,
           nextAttemptAt: null,
           lastError: null,
+          conflictServerRevision: null,
         }).where(eq(syncOutbox.id, item.id)).run();
       });
     } catch (error) {
@@ -262,6 +264,10 @@ function applyRemoteChanges(
           eq(syncOutbox.aggregateId, change.aggregateId),
         ))
         .get();
+      // A queued local command outranks remote data, including one parked as
+      // `action_required`. Pull stops here rather than overwriting an offline
+      // edit, so a conflict freezes every later change until the user resolves
+      // it through `resolveSessionConflict`.
       if (localMutation) {
         blocked = true;
         break;
@@ -402,6 +408,62 @@ async function pullRemoteSessions(userId: string, epoch: number): Promise<void> 
     cursor = applied.cursor;
     if (applied.blocked || !response.hasMore || response.changes.length === 0) return;
   }
+}
+
+/**
+ * How a revision conflict is settled. Automatic resolution is deliberately
+ * absent: both outcomes discard somebody's work, so the owner decides.
+ */
+export type SessionConflictResolution = 'keep-local' | 'use-remote';
+
+/**
+ * Settles a session parked as `action_required` and resumes synchronization.
+ *
+ * `keep-local` rebases the queued command onto the revision the server held
+ * when it refused, so the retry overwrites the other device's version. The
+ * outbox ID doubles as the idempotency key, and a conflict stores no receipt,
+ * so reusing it is safe.
+ *
+ * `use-remote` drops the queued command, discarding this device's edit. That
+ * unblocks the pull, and the server's version replaces the local rows on the
+ * next successful pull rather than immediately.
+ */
+export async function resolveSessionConflict(
+  userId: string,
+  sessionId: string,
+  resolution: SessionConflictResolution,
+): Promise<void> {
+  const item = database
+    .select()
+    .from(syncOutbox)
+    .where(and(
+      eq(syncOutbox.userId, userId),
+      eq(syncOutbox.aggregateType, 'session'),
+      eq(syncOutbox.aggregateId, sessionId),
+      eq(syncOutbox.status, 'action_required'),
+    ))
+    .get();
+  if (!item) return;
+
+  if (resolution === 'use-remote') {
+    database.delete(syncOutbox).where(eq(syncOutbox.id, item.id)).run();
+  } else {
+    const payload = JSON.parse(item.payloadJson) as Record<string, unknown>;
+    database.update(syncOutbox).set({
+      payloadJson: JSON.stringify({
+        ...payload,
+        baseRevision: item.conflictServerRevision ?? 0,
+      }),
+      status: 'pending',
+      attemptCount: 0,
+      nextAttemptAt: null,
+      lastError: null,
+      conflictServerRevision: null,
+      updatedAt: new Date().toISOString(),
+    }).where(eq(syncOutbox.id, item.id)).run();
+  }
+
+  await requestSync(userId);
 }
 
 /** Coalesces concurrent triggers into one foreground upload pass. */

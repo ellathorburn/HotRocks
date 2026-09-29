@@ -46,8 +46,12 @@ export const sessionQueries = {
       .orderBy(asc(sessionIntervals.sessionId), asc(sessionIntervals.position));
   },
 
+  /** Queued session commands with their status, so a conflict reads differently to a plain offline save. */
   pendingSessionSync(userId: string) {
-    return database.select({ aggregateId: syncOutbox.aggregateId })
+    return database.select({
+      aggregateId: syncOutbox.aggregateId,
+      status: syncOutbox.status,
+    })
       .from(syncOutbox)
       .where(and(eq(syncOutbox.userId, userId), eq(syncOutbox.aggregateType, 'session')));
   },
@@ -78,7 +82,7 @@ export const sessionQueries = {
   },
 
   pendingSyncForSession(sessionId: string, userId: string) {
-    return database.select({ id: syncOutbox.id })
+    return database.select({ id: syncOutbox.id, status: syncOutbox.status })
       .from(syncOutbox)
       .where(and(
         eq(syncOutbox.userId, userId),

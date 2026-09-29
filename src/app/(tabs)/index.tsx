@@ -14,7 +14,15 @@ import { formatCount, formatTotalDuration } from '@/lib/format';
 export default function HomeScreen() {
   const theme = useTheme();
   const preferences = useDisplayPreferences();
-  const { cards, week, lastSession, unsyncedCount, isLoaded } = useHomeSessions(preferences);
+  const {
+    cards,
+    week,
+    lastSession,
+    unsyncedCount,
+    conflictCount,
+    firstConflictId,
+    isLoaded,
+  } = useHomeSessions(preferences);
   const [repeatError, setRepeatError] = useState<string | null>(null);
 
   const repeatLastSession = () => {
@@ -28,6 +36,29 @@ export default function HomeScreen() {
       setRepeatError('Could not reuse that session. Log a new one instead.');
     }
   };
+
+  // A conflict stops every incoming change, not just this session's, so it is
+  // surfaced on the feed rather than only inside the session it belongs to.
+  const conflictBanner = conflictCount > 0 && firstConflictId ? (
+    <View style={{ paddingHorizontal: ScreenGutter, paddingBottom: 14 }}>
+      <Card>
+        <Label style={{ marginBottom: 6 }}>Sync stopped</Label>
+        <Text style={{ fontFamily: Rubik.regular, fontSize: Type.small, lineHeight: Type.small * 1.5, color: theme.textSecondary }}>
+          {conflictCount === 1
+            ? 'One session changed on another device too. Nothing syncs until you choose which version to keep.'
+            : `${formatCount(conflictCount, 'session', 'sessions')} changed on another device too. Nothing syncs until you choose which versions to keep.`}
+        </Text>
+        <Button
+          variant="secondary"
+          fullWidth
+          style={{ marginTop: 12 }}
+          iconLeft={<Icon name="alert-triangle" size={18} color={theme.text} />}
+          onPress={() => router.push(`/session/${firstConflictId}`)}>
+          Review it
+        </Button>
+      </Card>
+    </View>
+  ) : null;
 
   const weekStats = (
     <View style={{ paddingHorizontal: ScreenGutter, paddingBottom: 14 }}>
@@ -59,6 +90,7 @@ export default function HomeScreen() {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
         {header}
+        {conflictBanner}
         {weekStats}
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: ScreenGutter }}>
           <Logo variant="mark" height={72} />
@@ -81,6 +113,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
       {header}
+      {conflictBanner}
       {weekStats}
 
       <FlatList

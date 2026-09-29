@@ -28,6 +28,7 @@ const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
   camera: 'camera-outline',
   image: 'image-outline',
   'cloud-off': 'cloud-offline-outline',
+  'alert-triangle': 'warning-outline',
   pencil: 'pencil-outline',
   'trash-2': 'trash-outline',
   'share-2': 'share-social-outline',

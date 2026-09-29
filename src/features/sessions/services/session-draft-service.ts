@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 import type {
   SessionInterval,
   TimelineNavigationDraft,
+  TimelineNavigationDraftInput,
 } from '../types/session-types';
 import {
   sessionIntervalSchema,
@@ -23,7 +24,7 @@ function parseStoredDraft(payloadJson: string | null): TimelineNavigationDraft |
 
 function create(
   userId: string,
-  input: Omit<TimelineNavigationDraft, 'schemaVersion'>,
+  input: Omit<TimelineNavigationDraftInput, 'schemaVersion'>,
 ): string {
   const draft = timelineNavigationDraftSchema.parse({ schemaVersion: 2, ...input });
   return sessionStorage.createDraft(userId, JSON.stringify(draft));
@@ -71,6 +72,27 @@ export const sessionTimelineDraftService = {
       startedAt: now.toISOString(),
       elapsedSeconds: 0,
       entryMethod: 'repeat',
+      editingSessionId: null,
+    });
+  },
+  /**
+   * Starts an edit of a saved session. Unlike a repeat this keeps the session's
+   * ID, interval IDs, start time, elapsed time and details, so saving rewrites
+   * that session instead of creating another one. Abandoning the draft leaves
+   * the saved session untouched.
+   */
+  createEdit(userId: string, sessionId: string): string {
+    const source = sessionStorage.readSessionTimeline(sessionId, userId);
+    if (!source) throw new Error('Session to edit was not found.');
+    return create(userId, {
+      intervals: source.intervals,
+      venueName: source.venueName,
+      rating: source.rating,
+      note: source.note,
+      startedAt: source.startedAt,
+      elapsedSeconds: source.elapsedSeconds,
+      entryMethod: source.entryMethod,
+      editingSessionId: sessionId,
     });
   },
   setVenue(draftId: string, userId: string, venueName: string | null): void {
