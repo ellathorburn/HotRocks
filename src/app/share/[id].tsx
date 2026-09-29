@@ -1,10 +1,12 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Asset, requestPermissionsAsync } from 'expo-media-library';
+import { useRef, useState } from 'react';
+import { Platform, Text, View } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Chip, IconButton, Logo, TimelineStrip } from '@/components/ds';
+import { Button, Chip, Icon, IconButton, Logo, TimelineStrip } from '@/components/ds';
 import { displayText, Radius, Rubik, ScreenGutter } from '@/constants/theme';
 import { useDisplayPreferences } from '@/features/profiles/hooks/use-display-preferences';
 import { useShareSession } from '@/features/sessions/hooks/use-session-detail';
@@ -27,6 +29,8 @@ function ShareCardContent() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const id = singleRouteParam(params.id);
   const [story, setStory] = useState(false);
+  const cardRef = useRef<View>(null);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
   const {
     session,
     segments,
@@ -57,7 +61,7 @@ function ShareCardContent() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#0F0E47' }} edges={['top']}>
       <ShareHeader />
       <View style={{ paddingHorizontal: ScreenGutter, gap: 18 }}>
-        <View style={{ aspectRatio: story ? 9 / 16 : 1, borderRadius: Radius.lg, padding: 22, justifyContent: 'space-between',
+        <View ref={cardRef} collapsable={false} style={{ aspectRatio: story ? 9 / 16 : 1, borderRadius: Radius.lg, padding: 22, justifyContent: 'space-between',
           // Share card is the one gradient in the system; the bloom is its earned glow.
           experimental_backgroundImage: 'linear-gradient(160deg, #2A1330 0%, #0F0E47 55%, #0F0E47 100%)',
           boxShadow: '0 0 40px rgba(227,83,54,0.18)' }}>
@@ -101,16 +105,55 @@ function ShareCardContent() {
           <View style={{ alignItems: 'flex-end' }}><Logo variant="dark" height={16} /></View>
         </View>
 
-        <Text style={{ fontFamily: Rubik.regular, fontSize: 14, lineHeight: 21, color: '#8686AC', textAlign: 'center' }}>
-          Image export will be enabled when photo-library permissions are added.
-        </Text>
         <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
-          <Chip size="sm" selected={!story} onPress={() => setStory(false)}>Square</Chip>
-          <Chip size="sm" selected={story} onPress={() => setStory(true)}>9:16</Chip>
+          <Chip size="sm" selected={!story} onPress={() => { setStory(false); setSaveState('idle'); }}>Square</Chip>
+          <Chip size="sm" selected={story} onPress={() => { setStory(true); setSaveState('idle'); }}>9:16</Chip>
         </View>
+        {SAVE_SUPPORTED ? (
+          <Button
+            fullWidth
+            loading={saveState === 'saving'}
+            disabled={saveState === 'saving'}
+            iconLeft={<Icon name={saveState === 'saved' ? 'check' : 'download'} size={20} color="#0F0E47" />}
+            onPress={async () => {
+              setSaveState('saving');
+              setSaveState(await saveCardToPhotos(cardRef.current));
+            }}>
+            {saveState === 'saved' ? 'Saved to Photos' : 'Save image'}
+          </Button>
+        ) : null}
+        {SAVE_MESSAGES[saveState] ? (
+          <Text style={{ fontFamily: Rubik.regular, fontSize: 14, lineHeight: 21, color: '#8686AC', textAlign: 'center' }}>
+            {SAVE_MESSAGES[saveState]}
+          </Text>
+        ) : null}
       </View>
     </SafeAreaView>
   );
+}
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'denied' | 'failed';
+
+// The photo library is only reachable from the native apps.
+const SAVE_SUPPORTED = Platform.OS === 'ios' || Platform.OS === 'android';
+
+const SAVE_MESSAGES: Partial<Record<SaveState, string>> = {
+  denied: 'HotRocks needs permission to add photos. You can allow it in Settings.',
+  failed: 'The image could not be saved. Please try again.',
+};
+
+/** Snapshots the share card and writes it to the device photo library. */
+async function saveCardToPhotos(card: View | null): Promise<SaveState> {
+  if (!card) return 'failed';
+  try {
+    const { granted } = await requestPermissionsAsync(true, ['photo']);
+    if (!granted) return 'denied';
+    const uri = await captureRef(card, { format: 'png', quality: 1, result: 'tmpfile' });
+    await Asset.create(uri);
+    return 'saved';
+  } catch {
+    return 'failed';
+  }
 }
 
 function ShareHeader() {

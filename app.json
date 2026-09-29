@@ -50,6 +50,15 @@
         {
           "experimentalLauncherActivity": false
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "Allow HotRocks to save your session share cards to your photo library.",
+          "granularPermissions": [
+            "photo"
+          ]
+        }
       ]
     ],
     "experiments": {
