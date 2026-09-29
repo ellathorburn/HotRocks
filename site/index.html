@@ -4,136 +4,141 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HotRocks</title>
-  <meta name="description" content="HotRocks logs your sauna and cold plunge sessions as a timeline of heat, cold and rest. Works offline, syncs when you're back online.">
+  <meta name="description" content="Log your sauna and cold plunge, minute by minute. HotRocks times every sauna, plunge and break in the order you did them.">
   <meta name="theme-color" content="#0F0E47">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
+      color-scheme: dark;
       --midnight: #0F0E47;
       --midnight-800: #272757;
-      --indigo: #505081;
+      --midnight-700: #3A3A6B;
       --ember: #E35336;
       --sand: #F4A460;
       --cedar: #A0522D;
       --ice: #7EA8C4;
-      --ice-ink: #3B6480;
+      --ice-100: #DCE8F0;
+      --rest: #9090B3;
       --linen: #F5F5DC;
-      --linen-050: #FCFCF0;
-      --linen-200: #E7E7C9;
+      --muted: #9A9ABF;
 
-      --bg: var(--linen);
-      --card: var(--linen-050);
-      --text: var(--midnight);
-      --muted: var(--indigo);
-      --border: var(--linen-200);
-      --cold-ink: var(--ice-ink);
-      --rest: #505081;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: var(--midnight);
-        --card: var(--midnight-800);
-        --text: var(--linen);
-        --muted: #9A9ABF;
-        --border: #3A3A6B;
-        --cold-ink: var(--ice);
-        --rest: #9090B3;
-      }
+      --gutter: 16px;
+      --measure: 34rem;
     }
 
     * { box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
     body {
       margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Spline Sans', Inter, ui-sans-serif, system-ui, sans-serif;
+      background: var(--midnight);
+      color: var(--linen);
+      font-family: 'Rubik', system-ui, sans-serif;
+      font-size: 1.0625rem;
       line-height: 1.55;
     }
-    a { color: inherit; }
-    .wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+    a { color: inherit; text-underline-offset: 3px; }
+    a:focus-visible { outline: 2px solid var(--sand); outline-offset: 3px; border-radius: 4px; }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 var(--gutter); }
+    @media (min-width: 720px) { :root { --gutter: 32px; } }
 
-    header.top {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 20px 0;
-    }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; text-decoration: none; }
-    .brand svg { width: 32px; height: 32px; }
-    .top nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: .95rem; }
-    .top nav a:hover { color: var(--text); }
+    /* Header */
+    .top { display: flex; align-items: center; justify-content: space-between; padding: 24px 0; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.125rem; text-decoration: none; }
+    .brand svg { width: 30px; height: 30px; }
+    .top a.gh { color: var(--muted); font-size: .9375rem; text-decoration: none; }
+    .top a.gh:hover { color: var(--linen); }
 
-    .hero { padding: 56px 0 40px; }
-    .hero h1 {
-      font-size: clamp(2.2rem, 6vw, 3.6rem);
-      line-height: 1.05; letter-spacing: -0.02em; margin: 0 0 18px; max-width: 14ch;
+    /* Hero */
+    .hero { padding: 48px 0 0; }
+    h1 {
+      font-weight: 700;
+      font-size: clamp(2.5rem, 7.5vw, 5rem);
+      line-height: 1;
+      letter-spacing: -0.035em;
+      margin: 0 0 24px;
+      max-width: 13ch;
     }
-    .hero h1 .hot { color: var(--ember); }
-    .hero h1 .cold { color: var(--cold-ink); }
-    .hero p.lede { font-size: 1.2rem; color: var(--muted); max-width: 52ch; margin: 0 0 28px; }
-    .pill {
-      display: inline-block; padding: 4px 12px; border-radius: 999px;
-      border: 1px solid var(--border); background: var(--card);
-      font-size: .85rem; color: var(--muted); margin-bottom: 20px;
-    }
-    .btn {
-      display: inline-block; padding: 12px 20px; border-radius: 12px;
-      background: var(--ember); color: var(--midnight); font-weight: 700; text-decoration: none;
-    }
-    .btn:hover { background: #C8462C; }
+    .lede { font-size: 1.1875rem; color: var(--muted); max-width: var(--measure); margin: 0; }
+    .lede strong { color: var(--linen); font-weight: 500; }
 
-    /* Sample session timeline, like the strip in the app */
-    .session {
-      margin-top: 48px; background: var(--card); border: 1px solid var(--border);
-      border-radius: 20px; padding: 20px;
+    /* Session chart: heat rises above the line, cold drops below it */
+    .session { margin: 64px 0 0; }
+    .chart {
+      display: flex; gap: 3px;
+      height: clamp(220px, 38vw, 340px);
+      position: relative;
     }
-    .session-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-    .session-head strong { font-size: 1.05rem; }
-    .session-head span { color: var(--muted); font-size: .9rem; }
-    .strip { display: flex; gap: 4px; height: 44px; }
-    .strip div {
-      border-radius: 8px; display: flex; align-items: center; justify-content: center;
-      font-size: .8rem; font-weight: 700; min-width: 0; overflow: hidden;
+    .chart::after {
+      content: ""; position: absolute; left: 0; right: 0; top: 58%;
+      border-top: 1px solid var(--midnight-700);
     }
-    .h { background: var(--ember); color: var(--midnight); }
-    .c { background: var(--ice); color: var(--midnight); }
-    .r { background: var(--rest); color: var(--bg); }
-    .legend { display: flex; gap: 18px; margin-top: 14px; font-size: .85rem; color: var(--muted); flex-wrap: wrap; }
-    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
-    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
-    .totals div { border-top: 1px solid var(--border); padding-top: 10px; }
-    .totals b { display: block; font-size: 1.4rem; }
-    .totals small { color: var(--muted); }
-
-    section { padding: 56px 0; }
-    section h2 { font-size: 1.8rem; letter-spacing: -0.01em; margin: 0 0 8px; }
-    section p.sub { color: var(--muted); margin: 0 0 28px; max-width: 60ch; }
-
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-    .card {
-      background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px;
+    .seg { display: flex; flex-direction: column; min-width: 0; }
+    .seg .up { flex: 58; display: flex; align-items: flex-end; }
+    .seg .down { flex: 42; display: flex; align-items: flex-start; }
+    .bar {
+      width: 100%;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 8px 6px; font-size: .8125rem; font-weight: 500; line-height: 1.2;
+      overflow: hidden;
     }
-    .card h3 { margin: 0 0 6px; font-size: 1.1rem; }
-    .card p { margin: 0; color: var(--muted); }
-    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+    .sauna .bar { background: var(--ember); color: var(--midnight); border-radius: 6px 6px 0 0; transform-origin: bottom; }
+    .plunge .bar { background: var(--ice); color: var(--midnight); border-radius: 0 0 6px 6px; transform-origin: top; justify-content: flex-end; }
+    .brk .up { align-items: flex-end; }
+    .brk .bar { height: 4px; padding: 0; background: var(--rest); border-radius: 2px; transform-origin: left; }
+    .bar .t { font-weight: 700; font-size: .9375rem; }
 
-    .status { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-    .status li {
-      display: flex; gap: 12px; align-items: baseline;
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+    @media (prefers-reduced-motion: no-preference) {
+      .bar { animation: grow .5s cubic-bezier(.2,.7,.2,1) both; animation-delay: calc(var(--i) * 110ms + 200ms); }
+      .brk .bar { animation-name: grow-x; }
+      @keyframes grow { from { transform: scaleY(0); } }
+      @keyframes grow-x { from { transform: scaleX(0); } }
     }
-    .tag { font-size: .75rem; font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
-    .tag.done { background: var(--ember); color: var(--midnight); }
-    .tag.next { border: 1px solid var(--border); color: var(--muted); }
 
-    footer { padding: 40px 0 56px; color: var(--muted); font-size: .9rem; border-top: 1px solid var(--border); }
+    .caption {
+      display: flex; flex-wrap: wrap; gap: 8px 28px;
+      margin-top: 20px; color: var(--muted); font-size: .9375rem;
+    }
+    .caption b { color: var(--linen); font-weight: 500; }
+    .key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: 0; }
+
+    /* Sections */
+    section { padding: 112px 0 0; }
+    h2 {
+      font-weight: 700; font-size: clamp(1.75rem, 4vw, 2.5rem);
+      letter-spacing: -0.025em; line-height: 1.1; margin: 0 0 16px; max-width: 18ch;
+    }
+    .intro { color: var(--muted); max-width: var(--measure); margin: 0 0 48px; }
+
+    .features { display: grid; gap: 40px 56px; grid-template-columns: 1fr; }
+    @media (min-width: 720px) { .features { grid-template-columns: 1fr 1fr; } }
+    .features h3 { font-size: 1.1875rem; font-weight: 500; margin: 0 0 6px; }
+    .features p { margin: 0; color: var(--muted); max-width: 30rem; }
+
+    .ready { list-style: none; margin: 0; padding: 0; max-width: 40rem; }
+    .ready li {
+      display: grid; grid-template-columns: 6.5rem 1fr; gap: 16px;
+      padding: 14px 0; border-top: 1px solid var(--midnight-700);
+    }
+    .ready li:last-child { border-bottom: 1px solid var(--midnight-700); }
+    .ready .s { font-weight: 500; }
+    .ready .s.done { color: var(--sand); }
+    .ready .s.soon { color: var(--muted); }
+
+    footer {
+      margin-top: 112px; padding: 32px 0 48px;
+      border-top: 1px solid var(--midnight-700);
+      color: var(--muted); font-size: .9375rem;
+    }
     footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 
     @media (max-width: 560px) {
-      .top nav a:not(:last-child) { display: none; }
-      .totals b { font-size: 1.15rem; }
+      .bar { padding: 6px 3px; font-size: .75rem; }
+      .bar .deg { display: none; }
+      .seg { min-width: 22px; }
+      .ready li { grid-template-columns: 5rem 1fr; }
     }
   </style>
 </head>
@@ -142,7 +147,7 @@
     <header class="top">
       <a class="brand" href="./">
         <svg viewBox="0 0 1024 1024" aria-hidden="true">
-          <rect width="1024" height="1024" rx="180" fill="#0F0E47"/>
+          <rect width="1024" height="1024" rx="180" fill="#272757"/>
           <ellipse cx="512" cy="740" rx="416" ry="152" fill="#A0522D"/>
           <ellipse cx="480" cy="548" rx="336" ry="136" fill="#C8462C"/>
           <ellipse cx="544" cy="372" rx="248" ry="120" fill="#E35336"/>
@@ -150,101 +155,85 @@
         </svg>
         HotRocks
       </a>
-      <nav>
-        <a href="#features">Features</a>
-        <a href="#status">Status</a>
-        <a href="https://github.com/ellathorburn/HotRocks">GitHub</a>
-      </nav>
+      <a class="gh" href="https://github.com/ellathorburn/HotRocks">GitHub</a>
     </header>
 
-    <div class="hero">
-      <span class="pill">In development · iOS &amp; Android</span>
-      <h1>Log every round of <span class="hot">heat</span> and <span class="cold">cold</span>.</h1>
-      <p class="lede">HotRocks records your sauna and cold plunge visits as a timeline: each stint in the heat, each plunge, each break. See your totals, track your records, and keep a history of every session.</p>
-      <a class="btn" href="https://github.com/ellathorburn/HotRocks">View on GitHub</a>
+    <main>
+      <div class="hero">
+        <h1>Log your sauna and cold plunge, minute by minute.</h1>
+        <p class="lede">HotRocks times each part of your visit: every sauna, every cold plunge and every break, in the order you did them. <strong>Coming to iPhone and Android.</strong></p>
 
-      <div class="session" aria-label="Example session timeline">
-        <div class="session-head">
-          <strong>Saturday contrast session</strong>
-          <span>Example visit · 58 min</span>
-        </div>
-        <div class="strip">
-          <div class="h" style="flex:15">15′</div>
-          <div class="c" style="flex:3">3′</div>
-          <div class="r" style="flex:5">5′</div>
-          <div class="h" style="flex:12">12′</div>
-          <div class="c" style="flex:2">2′</div>
-          <div class="r" style="flex:4">4′</div>
-          <div class="h" style="flex:10">10′</div>
-          <div class="c" style="flex:3">3′</div>
-        </div>
-        <div class="legend">
-          <span><i class="h"></i>Heat</span>
-          <span><i class="c"></i>Cold</span>
-          <span><i class="r"></i>Rest</span>
-        </div>
-        <div class="totals">
-          <div><b>37 min</b><small>Heat</small></div>
-          <div><b>8 min</b><small>Cold</small></div>
-          <div><b>9 min</b><small>Rest</small></div>
-        </div>
+        <figure class="session" aria-label="Example session: three rounds of sauna and cold plunge with breaks, 58 minutes in total">
+          <div class="chart" aria-hidden="true">
+            <div class="seg sauna" style="flex:15;--i:0"><div class="up"><div class="bar" style="height:94%"><span class="t">15′</span><span class="deg">85°</span></div></div><div class="down"></div></div>
+            <div class="seg plunge" style="flex:3;--i:1"><div class="up"></div><div class="down"><div class="bar" style="height:88%"><span class="deg">4°</span><span class="t">3′</span></div></div></div>
+            <div class="seg brk" style="flex:5;--i:2"><div class="up"><div class="bar"></div></div><div class="down"></div></div>
+            <div class="seg sauna" style="flex:12;--i:3"><div class="up"><div class="bar" style="height:100%"><span class="t">12′</span><span class="deg">90°</span></div></div><div class="down"></div></div>
+            <div class="seg plunge" style="flex:2;--i:4"><div class="up"></div><div class="down"><div class="bar" style="height:94%"><span class="deg">3°</span><span class="t">2′</span></div></div></div>
+            <div class="seg brk" style="flex:4;--i:5"><div class="up"><div class="bar"></div></div><div class="down"></div></div>
+            <div class="seg sauna" style="flex:10;--i:6"><div class="up"><div class="bar" style="height:86%"><span class="t">10′</span><span class="deg">80°</span></div></div><div class="down"></div></div>
+            <div class="seg plunge" style="flex:3;--i:7"><div class="up"></div><div class="down"><div class="bar" style="height:80%"><span class="deg">5°</span><span class="t">3′</span></div></div></div>
+          </div>
+          <figcaption class="caption">
+            <span><i class="key" style="background:var(--ember)"></i>Sauna <b>37 min</b></span>
+            <span><i class="key" style="background:var(--ice)"></i>Cold plunge <b>8 min</b></span>
+            <span><i class="key" style="background:var(--rest)"></i>Breaks <b>9 min</b></span>
+            <span>An example visit, 58 minutes door to door</span>
+          </figcaption>
+        </figure>
       </div>
-    </div>
+
+      <section aria-labelledby="what">
+        <h2 id="what">Everything from one visit, in one place</h2>
+        <p class="intro">Start the timer when you walk in. Tap sauna, cold plunge or break as you move between them, in any order.</p>
+        <div class="features">
+          <div>
+            <h3>See how the visit went</h3>
+            <p>Each session is saved as a timeline, with your time in the sauna, in the plunge and on breaks, plus any temperatures you noted.</p>
+          </div>
+          <div>
+            <h3>Keep your records</h3>
+            <p>Your longest session, coldest plunge and most rounds in one visit, updated every time you log.</p>
+          </div>
+          <div>
+            <h3>Remember where you went</h3>
+            <p>Add the sauna or bathhouse to a session so you can look back at where each one happened.</p>
+          </div>
+          <div>
+            <h3>No signal needed</h3>
+            <p>Sessions save to your phone first, so a changing room with no reception is fine. They back up to your account once you're online again.</p>
+          </div>
+          <div>
+            <h3>Fix it afterwards</h3>
+            <p>Forgot to stop the timer or tapped the wrong thing? Edit any session once you're dressed.</p>
+          </div>
+          <div>
+            <h3>Only yours</h3>
+            <p>Sign in with Apple, Google or an email code. Nobody else can see your sessions, and you can delete your account and everything in it from settings.</p>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="ready">
+        <h2 id="ready">What's ready</h2>
+        <p class="intro">HotRocks isn't in the App Store or Google Play yet. This is where it stands.</p>
+        <ul class="ready">
+          <li><span class="s done">Ready</span><span>Session timer, timeline and history</span></li>
+          <li><span class="s done">Ready</span><span>Editing past sessions</span></li>
+          <li><span class="s done">Ready</span><span>Sign in with Apple, Google or email</span></li>
+          <li><span class="s done">Ready</span><span>Saving offline and backing up later</span></li>
+          <li><span class="s soon">Coming</span><span>Photos on sessions</span></li>
+          <li><span class="s soon">Coming</span><span>Sending sessions to Strava as workouts</span></li>
+          <li><span class="s soon">Coming</span><span>App Store and Google Play release</span></li>
+        </ul>
+      </section>
+    </main>
   </div>
-
-  <section id="features">
-    <div class="wrap">
-      <h2>What it does</h2>
-      <p class="sub">Built for people who alternate between the sauna and the plunge and want a record of it.</p>
-      <div class="grid">
-        <div class="card">
-          <h3><span class="dot" style="background:var(--ember)"></span>Session timer</h3>
-          <p>Start a visit, switch between heat, cold and rest as you go. Rounds can come in any order.</p>
-        </div>
-        <div class="card">
-          <h3><span class="dot" style="background:var(--ice)"></span>Timeline history</h3>
-          <p>Every visit is saved as an ordered timeline, with heat, cold and rest totals and the temperatures you logged.</p>
-        </div>
-        <div class="card">
-          <h3><span class="dot" style="background:var(--sand)"></span>Personal records</h3>
-          <p>Longest session, coldest plunge and most rounds in a single visit, kept up to date automatically.</p>
-        </div>
-        <div class="card">
-          <h3><span class="dot" style="background:var(--cedar)"></span>Venues</h3>
-          <p>Tag the sauna or bathhouse you visited so you can look back at where each session happened.</p>
-        </div>
-        <div class="card">
-          <h3><span class="dot" style="background:var(--rest)"></span>Works offline</h3>
-          <p>Sessions save to your phone first, so a changing room with no signal is fine. They sync to your account when you're back online.</p>
-        </div>
-        <div class="card">
-          <h3><span class="dot" style="background:var(--muted)"></span>Your data stays yours</h3>
-          <p>Sign in with Apple, Google or an email code. Only you can see your sessions, and you can delete your account and its data from the app.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="status">
-    <div class="wrap">
-      <h2>Where it's at</h2>
-      <p class="sub">HotRocks isn't in the app stores yet. Here's what works today and what's coming.</p>
-      <ul class="status">
-        <li><span class="tag done">Done</span>Session timer, timeline editing and history</li>
-        <li><span class="tag done">Done</span>Apple, Google and email code sign-in</li>
-        <li><span class="tag done">Done</span>Offline saving with background cloud sync</li>
-        <li><span class="tag done">Done</span>Account deletion that also clears data on the device</li>
-        <li><span class="tag next">Next</span>Session photos</li>
-        <li><span class="tag next">Next</span>Optional Strava export, one activity per visit</li>
-        <li><span class="tag next">Next</span>App Store and Google Play release</li>
-      </ul>
-    </div>
-  </section>
 
   <footer>
     <div class="wrap">
       <span>HotRocks</span>
-      <a href="https://github.com/ellathorburn/HotRocks">github.com/ellathorburn/HotRocks</a>
+      <a href="https://github.com/ellathorburn/HotRocks">Source on GitHub</a>
     </div>
   </footer>
 </body>
