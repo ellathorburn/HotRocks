@@ -224,12 +224,26 @@ export async function updatePassword(password: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Signs this device out and purges the account's local data.
+ *
+ * Revoking the session on the server needs both a valid session and a reachable
+ * network, and neither is guaranteed: the account may already have been deleted
+ * elsewhere, or the device may be offline. Signing out is a local intent, so a
+ * failed revoke must still clear this device. Failing early would leave the
+ * person signed in to an account they cannot use, with their data unpurged.
+ */
 export async function signOut(userId?: string): Promise<void> {
   invalidateSyncRuns();
-  const { error } = await getSupabaseClient().auth.signOut();
+  const supabase = getSupabaseClient();
+
+  const { error } = await supabase.auth.signOut();
   if (error) {
-    throw error;
+    if (__DEV__) console.warn('Server sign-out failed; clearing this device anyway', error);
+    // A local-scope sign-out touches no network and cannot be refused.
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
   }
+
   if (userId) purgeLocalAccountData(userId);
 }
 

@@ -139,10 +139,36 @@ in URLs.
 
 ## Strava boundary
 
-The mobile app will invoke Supabase Edge Functions for OAuth and export intent.
-A server worker owns token refresh and Strava writes. Strava activity creation
-does not accept a per-activity visibility field, so “Keep private” means no
-Strava post; posted activities inherit the athlete’s Strava privacy default.
+Status: connecting and posting implemented, 29 September 2026.
+
+The app holds no Strava credential. Three Edge Functions own everything that
+matters: `strava-authorize` mints a single-use state for the signed-in athlete
+and returns an authorization URL, `strava-callback` claims that state and stores
+the encrypted tokens, and `post-to-strava` refreshes and posts. Tokens are
+AES-GCM sealed inside the functions, so the key never reaches Postgres and the
+plaintext never reaches the app. `private.strava_connections` is unreachable
+from the Data API; security-definer functions granted to `service_role` alone
+are the only way in, and `my_strava_connection` gives the app connection status
+with no token in its return type.
+
+The athlete is always derived from the JWT or from the state nonce, never from
+configuration. An earlier one-off script took the account from an environment
+variable and silently connected the wrong one; deriving it makes that
+impossible.
+
+Strava redirects a browser to `strava-callback` rather than back into the app,
+because Strava validates the redirect host against the application’s configured
+callback domain and Expo Go has no stable app-owned scheme. That domain must
+therefore be the project’s functions host. The same flow works unchanged in
+Expo Go, a development build and production.
+
+Posting is idempotent on `strava_exports.session_id`: a second attempt returns
+the existing activity rather than creating another. Strava may return a new
+refresh token on each refresh, so a rotated pair is persisted.
+
+Strava activity creation does not accept a per-activity visibility field, so
+“Keep private” means no Strava post; posted activities inherit the athlete’s
+Strava privacy default.
 
 ## Source documentation
 

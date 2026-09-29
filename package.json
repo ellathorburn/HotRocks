@@ -69,8 +69,7 @@
     "db:start": "supabase start",
     "db:reset": "supabase db reset --local",
     "db:test": "supabase test db --local",
-    "db:lint": "supabase db lint --local --schema public,private --fail-on error",
-    "strava:connect": "node ./scripts/strava-connect.mjs"
+    "db:lint": "supabase db lint --local --schema public,private --fail-on error"
   },
   "jest": {
     "preset": "jest-expo",

@@ -1,28 +1,43 @@
-import { Pressable, Text, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View, type ViewStyle } from 'react-native';
 
 import { Radius, Rubik } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
 
 import { Icon } from './icon';
 
+/**
+ * Strava's brand orange. Their guidelines require their supplied
+ * "Connect with Strava" asset before public release; this is the app's own
+ * button in their colour, not a copy of that asset. Swap in the official
+ * artwork as part of store submission.
+ */
+const STRAVA_ORANGE = '#FC4C02';
+const STRAVA_ORANGE_PRESSED = '#E04502';
+
 type StravaConnectProps = {
   onPress?: () => void;
+  loading?: boolean;
+  disabled?: boolean;
   height?: number;
   style?: ViewStyle;
 };
 
-/**
- * Placeholder for Strava's official "Connect with Strava" button. Strava's
- * brand guidelines require their supplied asset and prohibit recreating
- * their identity, so this renders a neutral slot until that asset is added.
- */
-export function StravaConnect({ onPress, height = 48, style }: StravaConnectProps) {
-  const theme = useTheme();
+export function StravaConnect({
+  onPress,
+  loading = false,
+  disabled = false,
+  height = 48,
+  style,
+}: StravaConnectProps) {
+  const isInactive = disabled || loading;
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Connect with Strava"
+      accessibilityState={{ disabled: isInactive, busy: loading }}
+      disabled={isInactive}
       onPress={onPress}
-      style={[
+      style={({ pressed }) => [
         {
           flexDirection: 'row',
           alignItems: 'center',
@@ -31,16 +46,21 @@ export function StravaConnect({ onPress, height = 48, style }: StravaConnectProp
           height,
           paddingHorizontal: 18,
           borderRadius: Radius.md,
-          borderWidth: 1,
-          borderStyle: 'dashed',
-          borderColor: theme.borderStrong,
+          backgroundColor: pressed ? STRAVA_ORANGE_PRESSED : STRAVA_ORANGE,
+          opacity: isInactive ? 0.6 : 1,
         },
         style,
       ]}>
-      <Icon name="link" size={18} color={theme.textSecondary} />
-      <Text style={{ fontFamily: Rubik.medium, fontSize: 15, color: theme.textSecondary }}>
-        Official &quot;Connect with Strava&quot; button goes here
-      </Text>
+      {loading ? (
+        <ActivityIndicator color="#FFFFFF" />
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Icon name="link" size={18} color="#FFFFFF" />
+          <Text style={{ fontFamily: Rubik.semibold, fontSize: 16, color: '#FFFFFF' }}>
+            Connect with Strava
+          </Text>
+        </View>
+      )}
     </Pressable>
   );
 }

@@ -21,6 +21,8 @@ export type StravaPostFailure =
   | 'missing_scope'
   | 'not_synced'
   | 'strava_rejected'
+  | 'not_deployed'
+  | 'server_error'
   | 'offline'
   | 'unknown';
 
@@ -40,6 +42,8 @@ export const stravaPostMessages: Record<StravaPostFailure, string> = {
   missing_scope: 'Reconnect Strava and allow it to add activities.',
   not_synced: 'This session has not reached the cloud yet. Try again in a moment.',
   strava_rejected: 'Strava would not accept this session. Try again later.',
+  not_deployed: 'Strava posting is not available on this project yet.',
+  server_error: 'Posting to Strava failed on the server. Try again.',
   offline: 'Check your internet connection and try again.',
   unknown: 'Could not post to Strava. Try again.',
 };
@@ -65,6 +69,47 @@ function isOffline(error: unknown): boolean {
     && /failed to fetch|network request failed|network error/i.test(error.message);
 }
 
+type FunctionErrorDetail = { status: number | null; code: string | null };
+
+/**
+ * Reads why the function refused.
+ *
+ * `functions.invoke` does not parse a non-2xx body into `data`: it returns the
+ * raw Response on `error.context`. Reading the body from there is the only way
+ * to tell "not connected" from "Strava is unhappy", so without this every
+ * failure looks identical.
+ */
+async function readFunctionError(error: unknown): Promise<FunctionErrorDetail> {
+  const context = (error as { context?: unknown }).context;
+  if (!(context instanceof Response)) return { status: null, code: null };
+  try {
+    const body = await context.clone().json() as { code?: unknown };
+    return {
+      status: context.status,
+      code: typeof body.code === 'string' ? body.code : null,
+    };
+  } catch {
+    return { status: context.status, code: null };
+  }
+}
+
+function reasonFor({ status, code }: FunctionErrorDetail, error: unknown): StravaPostFailure {
+  switch (code) {
+    case 'not_connected':
+    case 'missing_scope':
+    case 'strava_rejected':
+      return code;
+    case 'session_not_found':
+      return 'not_synced';
+    default:
+      break;
+  }
+  if (status === 404) return 'not_deployed';
+  if (status !== null && status >= 500) return 'server_error';
+  if (isOffline(error)) return 'offline';
+  return 'unknown';
+}
+
 /** Posts the session and records the result so the screen reflects it at once. */
 async function post(input: PostToStravaInput): Promise<number> {
   const { name, description } = buildStravaActivityText(input);
@@ -87,19 +132,20 @@ async function post(input: PostToStravaInput): Promise<number> {
 
   const { data, error } = response;
   if (error) {
-    // The function reports why in the body; a bare status is not enough to tell
-    // "not connected" from "Strava is unhappy".
-    const code = data?.code;
-    const reason: StravaPostFailure = code === 'not_connected' || code === 'missing_scope'
-      ? code
-      : code === 'session_not_found'
-        ? 'not_synced'
-        : code === 'strava_rejected'
-          ? 'strava_rejected'
-          : isOffline(error)
-            ? 'offline'
-            : 'unknown';
-    stravaExportStorage.markFailed(input.sessionId, input.userId, code ?? 'invoke_error');
+    const detail = await readFunctionError(error);
+    const reason = reasonFor(detail, error);
+    if (__DEV__) {
+      console.error('post-to-strava refused', {
+        status: detail.status,
+        code: detail.code,
+        reason,
+      });
+    }
+    stravaExportStorage.markFailed(
+      input.sessionId,
+      input.userId,
+      detail.code ?? `http_${detail.status ?? 'unknown'}`,
+    );
     throw new StravaPostError(reason, stravaPostMessages[reason]);
   }
 

@@ -7,31 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       profiles: {
@@ -398,6 +373,39 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      consume_strava_oauth_state: { Args: { p_state: string }; Returns: string }
+      create_strava_oauth_state: {
+        Args: {
+          p_expires_at: string
+          p_redirect_uri: string
+          p_state: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
+      delete_strava_connection: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
+      disconnect_my_strava: { Args: never; Returns: boolean }
+      get_strava_connection: {
+        Args: { p_user_id: string }
+        Returns: {
+          access_token_ciphertext: string
+          athlete_id: number
+          expires_at: string
+          refresh_token_ciphertext: string
+          scopes: string[]
+        }[]
+      }
+      my_strava_connection: {
+        Args: never
+        Returns: {
+          athlete_id: number
+          connected_at: string
+          scopes: string[]
+        }[]
+      }
       pull_session_changes: {
         Args: { p_after_sequence?: number; p_limit?: number }
         Returns: Json
@@ -410,6 +418,30 @@ export type Database = {
           p_payload: Json
         }
         Returns: Json
+      }
+      rotate_strava_tokens: {
+        Args: {
+          p_access_token_ciphertext: string
+          p_expires_at: string
+          p_refresh_token_ciphertext: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
+      save_strava_connection: {
+        Args: {
+          p_access_token_ciphertext: string
+          p_athlete_id: number
+          p_expires_at: string
+          p_refresh_token_ciphertext: string
+          p_scopes: string[]
+          p_user_id: string
+        }
+        Returns: undefined
+      }
+      strava_connection_owner: {
+        Args: { p_athlete_id: number }
+        Returns: string
       }
     }
     Enums: {
@@ -539,9 +571,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

@@ -45,12 +45,23 @@
 
 ## 5. Strava
 
-- [ ] Validate the final implementation against current Strava API docs.
-- [ ] Implement OAuth state creation and code exchange Edge Functions.
-- [ ] Encrypt access and refresh tokens at rest.
-- [ ] Add the durable export queue and worker.
-- [ ] Add token-refresh locking and ambiguous-create reconciliation.
-- [ ] Add webhook handling and disconnect/revoke.
+- [x] Validate the implementation against current Strava API docs.
+- [x] Implement OAuth state creation and code exchange Edge Functions.
+- [x] Encrypt access and refresh tokens at rest.
+- [x] Connect and disconnect from inside the app.
+- [x] Post a saved session as an activity, idempotently.
+- [x] Persist a rotated refresh token.
+- [ ] Add the durable export queue and worker. Posting is currently synchronous:
+      it needs the athlete to be online and offers a manual retry, rather than
+      queueing and retrying by itself like the session outbox does.
+- [ ] Add token-refresh locking and ambiguous-create reconciliation. A request
+      that fails after Strava created the activity is not yet reconciled, so a
+      retry could duplicate it.
+- [ ] Add webhook handling, and revoke the token with Strava on disconnect.
+      Disconnecting currently forgets the token locally without telling Strava.
+
+Note: Strava requires an active subscription for Standard-tier API access, and a
+new application is limited to one athlete, ten after an unreviewed upgrade.
 
 ## 6. Verification gates
 

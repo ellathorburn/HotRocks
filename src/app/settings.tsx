@@ -8,6 +8,7 @@ import { NavBar } from '@/components/nav-bar';
 import { Rubik, ScreenGutter, Type } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
 import { deleteAccount, signOut } from '@/features/auth/auth-service';
+import { useStravaConnection } from '@/features/strava/hooks/use-strava-connection';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function SettingsScreen() {
@@ -15,6 +16,7 @@ export default function SettingsScreen() {
   const { profile, updateProfile, user } = useAuth();
   const [isUpdating, setIsUpdating] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
+  const strava = useStravaConnection();
 
   const runAccountAction = async (action: () => Promise<void>) => {
     setAccountError(null);
@@ -78,7 +80,25 @@ export default function SettingsScreen() {
 
         <Label style={{ marginTop: 20, marginBottom: 8 }}>Strava</Label>
         <Card padded={false}>
-          <ListRow title="Not connected" meta="Strava connection is coming in a later release." />
+          <ListRow
+            title={strava.isConnected ? 'Connected' : 'Not connected'}
+            meta={strava.isConnected
+              ? `Athlete ${strava.connection?.athleteId}. Post a session from its own screen.`
+              : 'Connect Strava to post sessions as activities.'}
+            trailing={(
+              <Button
+                variant={strava.isConnected ? 'ghost' : 'secondary'}
+                size="sm"
+                loading={strava.isBusy}
+                disabled={!strava.isLoaded || isUpdating}
+                onPress={() => void (strava.isConnected ? strava.disconnect() : strava.connect())}>
+                {strava.isConnected ? 'Disconnect' : 'Connect'}
+              </Button>
+            )}
+          />
+          {strava.errorMessage ? (
+            <ListRow title={strava.errorMessage} />
+          ) : null}
           <ListRow title="Default sport type" meta={profile?.default_strava_sport_type ?? 'Workout'} />
           <ListRow
             title="Post publicly by default"

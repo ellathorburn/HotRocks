@@ -21,6 +21,9 @@ expo-env.d.ts
 # Metro
 .metro-health-check*
 
+# Scratch output from local tooling
+.tmp/
+
 # debug
 npm-debug.*
 yarn-debug.*

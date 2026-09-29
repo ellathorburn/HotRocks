@@ -1,6 +1,17 @@
 import '@supabase/functions-js/edge-runtime.d.ts';
 import { withSupabase } from '@supabase/server';
 
+import {
+  decryptToken,
+  encryptToken,
+  refreshAccessToken,
+  STRAVA_ACTIVITIES_URL,
+  STRAVA_REQUIRED_SCOPE,
+} from '../_shared/strava-tokens.ts';
+
+/** Refresh early so a slow request cannot run past the expiry mid-flight. */
+const EXPIRY_MARGIN_SECONDS = 120;
+
 /**
  * Posts one saved session to the signed-in athlete's Strava account.
  *
@@ -9,74 +20,6 @@ import { withSupabase } from '@supabase/server';
  * the refresh token, and the decryption key. The athlete is taken from the JWT,
  * never from the request body, so a caller can only post their own sessions.
  */
-
-const STRAVA_TOKEN_URL = 'https://www.strava.com/oauth/token';
-const STRAVA_ACTIVITIES_URL = 'https://www.strava.com/api/v3/activities';
-/** Refresh early so a slow request cannot run past the expiry mid-flight. */
-const EXPIRY_MARGIN_SECONDS = 120;
-
-type StravaTokenResponse = {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
-};
-
-function requireEnv(name: string): string {
-  const value = Deno.env.get(name);
-  if (!value) throw new Error(`${name} is not configured.`);
-  return value;
-}
-
-async function encryptionKey(): Promise<CryptoKey> {
-  const raw = Uint8Array.from(atob(requireEnv('STRAVA_TOKEN_ENCRYPTION_KEY')), (c) => c.charCodeAt(0));
-  if (raw.byteLength !== 32) {
-    throw new Error('STRAVA_TOKEN_ENCRYPTION_KEY must be 32 bytes, base64 encoded.');
-  }
-  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
-}
-
-/** AES-GCM with the 12-byte nonce prepended to the ciphertext. */
-async function encryptToken(plaintext: string): Promise<string> {
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const sealed = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: nonce },
-    await encryptionKey(),
-    new TextEncoder().encode(plaintext),
-  );
-  const packed = new Uint8Array(nonce.byteLength + sealed.byteLength);
-  packed.set(nonce, 0);
-  packed.set(new Uint8Array(sealed), nonce.byteLength);
-  return btoa(String.fromCharCode(...packed));
-}
-
-async function decryptToken(base64: string): Promise<string> {
-  const packed = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  const opened = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: packed.subarray(0, 12) },
-    await encryptionKey(),
-    packed.subarray(12),
-  );
-  return new TextDecoder().decode(opened);
-}
-
-async function refreshAccessToken(refreshToken: string): Promise<StravaTokenResponse> {
-  const response = await fetch(STRAVA_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: requireEnv('STRAVA_CLIENT_ID'),
-      client_secret: requireEnv('STRAVA_CLIENT_SECRET'),
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-    }),
-  });
-  if (!response.ok) {
-    // The body can carry the client secret back in an error echo, so it is
-    // deliberately not forwarded to the app.
-    throw new Error(`strava_refresh_failed_${response.status}`);
-  }
-  return await response.json() as StravaTokenResponse;
-}
 
 export default {
   fetch: withSupabase({ auth: 'user' }, async (req, ctx) => {
@@ -135,7 +78,7 @@ export default {
         { status: 409 },
       );
     }
-    if (!connection.scopes?.includes('activity:write')) {
+    if (!connection.scopes?.includes(STRAVA_REQUIRED_SCOPE)) {
       return Response.json(
         { code: 'missing_scope', message: 'Reconnect Strava and allow it to add activities.' },
         { status: 409 },

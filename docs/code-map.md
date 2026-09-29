@@ -30,6 +30,10 @@ for copyable read/write examples and import rules.
 | Offline/cloud synchronization | `src/services/sync/sync-engine.ts` | Pushes queued commands, pulls remote changes, and settles revision conflicts via `resolveSessionConflict` |
 | Authentication operations | `src/features/auth/auth-service.ts` | Sign-in, sign-up, OAuth, email code (OTP), sign-out, and account deletion |
 | Authentication state | `src/features/auth/auth-context.tsx` | Current session/user state; profile work is delegated to `profileService` |
+| Strava connection | `src/features/strava/services/strava-connection-service.ts` | Connect, disconnect and read status; never holds a token |
+| Strava posting | `src/features/strava/services/strava-export-service.ts` | Posts a saved session through the `post-to-strava` function |
+| Strava activity text | `src/features/strava/services/strava-activity-text.ts` | Pure name and description for an activity |
+| Strava server functions | `supabase/functions/strava-authorize`, `strava-callback`, `post-to-strava` | Own the client secret, the tokens and the encryption key |
 | Screens and routes | `src/app/` | UI and navigation only |
 
 ## Public service APIs

@@ -7,13 +7,21 @@ import { Button, Logo, StravaConnect } from '@/components/ds';
 import { Dots } from '@/components/dots';
 import { Rubik, ScreenGutter, Type } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
+import { useStravaConnection } from '@/features/strava/hooks/use-strava-connection';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function OnboardingConnectScreen() {
   const theme = useTheme();
   const { completeOnboarding } = useAuth();
+  const strava = useStravaConnection();
   const [isFinishing, setIsFinishing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Only move on once Strava actually connected. Finishing regardless would
+  // navigate away from the error and look as though it had worked.
+  const connectThenFinish = async () => {
+    if (await strava.connect()) await finish();
+  };
 
   const finish = async () => {
     setErrorMessage(null);
@@ -39,10 +47,30 @@ export default function OnboardingConnectScreen() {
           is read from your account.
         </Text>
         <View style={{ gap: 12, marginTop: 8 }}>
-          <StravaConnect onPress={() => void finish()} />
-          <Button variant="ghost" fullWidth loading={isFinishing} onPress={() => void finish()}>
-            Skip, log without Strava
+          {strava.isConnected ? (
+            <Button size="lg" fullWidth loading={isFinishing} onPress={() => void finish()}>
+              Strava connected &middot; Continue
+            </Button>
+          ) : (
+            <StravaConnect
+              loading={strava.isBusy}
+              disabled={isFinishing}
+              onPress={() => void connectThenFinish()}
+            />
+          )}
+          <Button
+            variant="ghost"
+            fullWidth
+            loading={isFinishing}
+            disabled={strava.isBusy}
+            onPress={() => void finish()}>
+            {strava.isConnected ? 'Continue without posting' : 'Skip, log without Strava'}
           </Button>
+          {strava.errorMessage ? (
+            <Text style={{ fontFamily: Rubik.medium, fontSize: Type.small, color: theme.cedar, textAlign: 'center' }}>
+              {strava.errorMessage}
+            </Text>
+          ) : null}
           {errorMessage ? (
             <Text style={{ fontFamily: Rubik.medium, fontSize: Type.small, color: theme.cedar, textAlign: 'center' }}>
               {errorMessage}

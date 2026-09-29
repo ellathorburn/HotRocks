@@ -15,6 +15,7 @@ import {
 import { profileService } from '@/features/profiles/services/profile-service';
 import type { Profile, ProfileUpdate } from '@/features/profiles/types/profile-types';
 import type { PersonName } from '@/features/auth/auth-credentials';
+import { decideStoredSession } from '@/features/auth/session-verification';
 import { invalidateSyncRuns } from '@/services/sync/sync-engine';
 
 /**
@@ -74,8 +75,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
           const { data: userData, error: userError } = await supabase.auth.getUser(
             storedSession.access_token,
           );
-          if (!userError && userData.user?.id === storedSession.user.id) {
-            verifiedSession = { ...storedSession, user: userData.user };
+          const decision = decideStoredSession({
+            storedUserId: storedSession.user.id,
+            user: userData.user ?? null,
+            error: userError ?? null,
+          });
+
+          if (decision.outcome === 'verified') {
+            verifiedSession = { ...storedSession, user: decision.user };
+          } else if (decision.outcome === 'unverified') {
+            // Offline launch: the device's own data stays reachable.
+            verifiedSession = storedSession;
           } else {
             await supabase.auth.signOut({ scope: 'local' });
           }

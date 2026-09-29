@@ -445,3 +445,17 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/post-to-strava/deno.json"
 entrypoint = "./functions/post-to-strava/index.ts"
+
+[functions.strava-authorize]
+enabled = true
+verify_jwt = true
+import_map = "./functions/strava-authorize/deno.json"
+entrypoint = "./functions/strava-authorize/index.ts"
+
+# Strava redirects a browser here with no JWT, so the gateway cannot verify one.
+# The single-use state nonce created by strava-authorize is the authentication.
+[functions.strava-callback]
+enabled = true
+verify_jwt = false
+import_map = "./functions/strava-callback/deno.json"
+entrypoint = "./functions/strava-callback/index.ts"

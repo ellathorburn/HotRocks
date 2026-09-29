@@ -24,7 +24,10 @@ The UI can call the functions exported by
   custom SMTP is configured on the hosted project, codes only arrive locally in
   Mailpit.
 - `signOut(userId)` ends the Supabase session and purges that account's local
-  SQLite data.
+  SQLite data. Revoking on the server is best-effort: an account deleted
+  elsewhere or an unreachable network would otherwise leave the person signed in
+  to an account they cannot use, so a failed revoke still clears this device and
+  purges its data.
 - `deleteAccount(userId)` invokes the authenticated server function, removes
   stored photos, deletes the Auth user and purges local account data.
 
@@ -46,6 +49,14 @@ Anyone still without a name completes it before onboarding. The name can be
 changed from Settings. Native sessions are stored in chunked Expo SecureStore values; web
 sessions use AsyncStorage. Refreshing runs only while the native app is
 foregrounded.
+
+A session restored from device storage is checked against the server, because an
+account can be deleted or revoked elsewhere. `decideStoredSession`
+(`src/features/auth/session-verification.ts`) separates the two answers the
+server can give: an authoritative rejection signs the device out, while an
+unreachable server leaves the stored session in place. HotRocks is local-first,
+so treating a network failure as a rejection would sign people out whenever they
+opened the app offline and hide data already on the device.
 
 The custom `hotrocks` URL scheme is sufficient for installed development and
 production builds; owning a web domain is not required for native OAuth. Use a
