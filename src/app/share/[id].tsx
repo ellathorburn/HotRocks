@@ -1,15 +1,14 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Asset, requestPermissionsAsync } from 'expo-media-library';
 import { useRef, useState } from 'react';
-import { Platform, Text, View } from 'react-native';
-import { captureRef } from 'react-native-view-shot';
+import { Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button, Chip, Icon, IconButton, Logo, TimelineStrip } from '@/components/ds';
 import { displayText, Radius, Rubik, ScreenGutter } from '@/constants/theme';
 import { useDisplayPreferences } from '@/features/profiles/hooks/use-display-preferences';
 import { useShareSession } from '@/features/sessions/hooks/use-session-detail';
+import { canSaveShareCard, saveShareCardToPhotos, type SaveCardResult } from '@/features/sessions/services/share-card-export';
 import { ThemeSchemeContext } from '@/hooks/use-theme';
 import { formatTemperature, formatTotalDuration } from '@/lib/format';
 import { singleRouteParam } from '@/lib/route-params';
@@ -109,7 +108,7 @@ function ShareCardContent() {
           <Chip size="sm" selected={!story} onPress={() => { setStory(false); setSaveState('idle'); }}>Square</Chip>
           <Chip size="sm" selected={story} onPress={() => { setStory(true); setSaveState('idle'); }}>9:16</Chip>
         </View>
-        {SAVE_SUPPORTED ? (
+        {canSaveShareCard ? (
           <Button
             fullWidth
             loading={saveState === 'saving'}
@@ -117,7 +116,7 @@ function ShareCardContent() {
             iconLeft={<Icon name={saveState === 'saved' ? 'check' : 'download'} size={20} color="#0F0E47" />}
             onPress={async () => {
               setSaveState('saving');
-              setSaveState(await saveCardToPhotos(cardRef.current));
+              setSaveState(await saveShareCardToPhotos(cardRef.current));
             }}>
             {saveState === 'saved' ? 'Saved to Photos' : 'Save image'}
           </Button>
@@ -132,29 +131,12 @@ function ShareCardContent() {
   );
 }
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'denied' | 'failed';
-
-// The photo library is only reachable from the native apps.
-const SAVE_SUPPORTED = Platform.OS === 'ios' || Platform.OS === 'android';
+type SaveState = 'idle' | 'saving' | SaveCardResult;
 
 const SAVE_MESSAGES: Partial<Record<SaveState, string>> = {
   denied: 'HotRocks needs permission to add photos. You can allow it in Settings.',
   failed: 'The image could not be saved. Please try again.',
 };
-
-/** Snapshots the share card and writes it to the device photo library. */
-async function saveCardToPhotos(card: View | null): Promise<SaveState> {
-  if (!card) return 'failed';
-  try {
-    const { granted } = await requestPermissionsAsync(true, ['photo']);
-    if (!granted) return 'denied';
-    const uri = await captureRef(card, { format: 'png', quality: 1, result: 'tmpfile' });
-    await Asset.create(uri);
-    return 'saved';
-  } catch {
-    return 'failed';
-  }
-}
 
 function ShareHeader() {
   return (
